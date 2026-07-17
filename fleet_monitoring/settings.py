@@ -82,8 +82,12 @@ WSGI_APPLICATION = 'fleet_monitoring.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.getenv('DB_NAME', 'fleet_db'),
+        'USER': os.getenv('DB_USER', 'fleet_user'),
+        'PASSWORD': os.getenv('DB_PASSWORD', 'fleet_password'),
+        'HOST': os.getenv('DB_HOST', 'localhost'),
+        'PORT': os.getenv('DB_PORT', '5432'),
     }
 }
 
@@ -146,4 +150,15 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'Backend API for fleet monitoring system',
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
+}
+
+# Redis Cache settings
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': os.getenv('REDIS_URL', 'redis://localhost:6379/1'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+        }
+    }
 }
