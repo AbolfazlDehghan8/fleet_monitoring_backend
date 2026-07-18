@@ -4,6 +4,9 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from drf_spectacular.utils import extend_schema
 from .serializers import RegisterSerializer, LoginSerializer, RefreshTokenSerializer, UserSerializer
+from .services import AuthService, UserService
+from django.core.exceptions import ValidationError
+from rest_framework.exceptions import AuthenticationFailed
 
 
 class RegisterView(APIView):
@@ -16,14 +19,14 @@ class RegisterView(APIView):
         description='Create a new user account with username, email, password, and role'
     )
     def post(self, request):
-        serializer = RegisterSerializer(data=request.data)
-        if serializer.is_valid():
-            user = serializer.save()
+        try:
+            user = AuthService.register_user(request.data)
             return Response(
                 UserSerializer(user).data,
                 status=status.HTTP_201_CREATED
             )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except ValidationError as e:
+            return Response(e.message_dict, status=status.HTTP_400_BAD_REQUEST)
 
 
 class LoginView(APIView):
@@ -36,10 +39,17 @@ class LoginView(APIView):
         description='Authenticate user and return access and refresh tokens'
     )
     def post(self, request):
-        serializer = LoginSerializer(data=request.data)
-        if serializer.is_valid():
-            return Response(serializer.validated_data, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            result = AuthService.login_user(
+                username=request.data.get('username'),
+                password=request.data.get('password')
+            )
+            return Response(result, status=status.HTTP_200_OK)
+        except AuthenticationFailed as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
 
 
 class RefreshTokenView(APIView):
@@ -52,10 +62,16 @@ class RefreshTokenView(APIView):
         description='Get a new access token using a valid refresh token'
     )
     def post(self, request):
-        serializer = RefreshTokenSerializer(data=request.data)
-        if serializer.is_valid():
-            return Response(serializer.validated_data, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_401_UNAUTHORIZED)
+        try:
+            result = AuthService.refresh_access_token(
+                request.data.get('refresh_token')
+            )
+            return Response(result, status=status.HTTP_200_OK)
+        except AuthenticationFailed as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
 
 
 class LogoutView(APIView):
@@ -66,6 +82,7 @@ class LogoutView(APIView):
         description='Logout the current user (client side token discard)'
     )
     def post(self, request):
+        # With stateless JWT, logout is handled client-side
         return Response(
             {'message': 'Successfully logged out'},
             status=status.HTTP_200_OK
@@ -81,5 +98,5 @@ class ProfileView(APIView):
         description='Get the authenticated user\'s profile information'
     )
     def get(self, request):
-        serializer = UserSerializer(request.user)
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        profile_data = UserService.get_user_profile(request.user)
+        return Response(profile_data, status=status.HTTP_200_OK)
