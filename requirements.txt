@@ -9,7 +9,7 @@ inflection==0.5.1
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
 pika==1.4.1
-psycopg2-binary==2.9.10
+psycopg2-binary==2.9.12
 PyJWT==2.10.1
 python-dotenv==1.0.1
 PyYAML==6.0.3
