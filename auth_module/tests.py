@@ -1,14 +1,3 @@
-"""
-Tests for auth_module.
-
-Covers Section 1.2.1 (Testing is In Scope) for the authentication surface:
-register, login, refresh, profile, change-password, and admin user CRUD
-(Section 5.2 Access Control Matrix).
-
-NOTE: DATABASES in settings.py points at PostgreSQL (per AC-05 — PostgreSQL
-as System of Record), so `python manage.py test` requires the `postgres`
-service from docker-compose.yml to be running.
-"""
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
