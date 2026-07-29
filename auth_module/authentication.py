@@ -41,8 +41,6 @@ class JWTAuthentication(authentication.BaseAuthentication):
             raise exceptions.AuthenticationFailed('Invalid token')
         except User.DoesNotExist:
             raise exceptions.AuthenticationFailed('User not found')
-        except Exception as e:
-            raise exceptions.AuthenticationFailed(f'Authentication error: {str(e)}')
 
     def authenticate_header(self, request):
         return 'Bearer'

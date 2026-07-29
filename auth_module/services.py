@@ -1,52 +1,55 @@
-from django.contrib.auth import authenticate
+
+import logging
+from datetime import datetime, timedelta
+
+import jwt
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from rest_framework.exceptions import AuthenticationFailed
-import jwt
-from datetime import datetime, timedelta
-from django.conf import settings
+
 from .models import User
+
+# NFR-SEC09: All write operations logged with actor, timestamp, action.
+audit_logger = logging.getLogger('audit')
+
+ACCESS_TOKEN_LIFETIME_MINUTES = 30   # NFR-SEC01
+REFRESH_TOKEN_LIFETIME_DAYS = 7      # NFR-SEC01
 
 
 class AuthService:
 
     @staticmethod
-    def register_user(data):
-        required_fields = ['username', 'email', 'password', 'password_confirm']
-        for field in required_fields:
-            if field not in data or not data[field]:
-                raise ValidationError({field: f'{field} is required'})
-
-        if data['password'] != data['password_confirm']:
-            raise ValidationError({'password_confirm': 'Passwords do not match'})
-
-        if len(data['password']) < 8:
-            raise ValidationError({'password': 'Password must be at least 8 characters long'})
-
-        valid_roles = ['admin', 'fleet_manager', 'driver']
-        role = data.get('role', 'driver')
-        if role not in valid_roles:
-            raise ValidationError({'role': f'Role must be one of: {", ".join(valid_roles)}'})
+    def register_user(validated_data):
+        """validated_data is expected to already be cleaned by RegisterSerializer."""
+        role = validated_data.get('role', User.Role.DRIVER)
 
         try:
             user = User.objects.create_user(
-                username=data['username'],
-                email=data['email'],
-                password=data['password'],
+                username=validated_data['username'],
+                email=validated_data['email'],
+                password=validated_data['password'],
                 role=role,
-                first_name=data.get('first_name', ''),
-                last_name=data.get('last_name', '')
+                first_name=validated_data.get('first_name', ''),
+                last_name=validated_data.get('last_name', ''),
             )
-            return user
-        except IntegrityError as e:
-            if 'username' in str(e):
+        except IntegrityError as exc:
+            message = str(exc).lower()
+            if 'username' in message:
                 raise ValidationError({'username': 'Username already exists'})
-            elif 'email' in str(e):
+            if 'email' in message:
                 raise ValidationError({'email': 'Email already exists'})
-            raise
+            raise ValidationError({'detail': 'Could not create user due to a conflicting record'})
+
+        audit_logger.info(
+            'user_registered', extra={'actor': user.id, 'action': 'register', 'target': user.id}
+        )
+        return user
 
     @staticmethod
     def login_user(username, password):
+        from django.contrib.auth import authenticate
+
         user = authenticate(username=username, password=password)
 
         if not user:
@@ -55,8 +58,10 @@ class AuthService:
         if not user.is_active:
             raise AuthenticationFailed('User account is disabled')
 
-        access_token = AuthService._generate_token(user, 'access', minutes=30)
-        refresh_token = AuthService._generate_token(user, 'refresh', days=7)
+        access_token = AuthService._generate_token(user, 'access', minutes=ACCESS_TOKEN_LIFETIME_MINUTES)
+        refresh_token = AuthService._generate_token(user, 'refresh', days=REFRESH_TOKEN_LIFETIME_DAYS)
+
+        audit_logger.info('user_login', extra={'actor': user.id, 'action': 'login', 'target': user.id})
 
         return {
             'user': {
@@ -87,11 +92,9 @@ class AuthService:
             if not user.is_active:
                 raise AuthenticationFailed('User account is disabled')
 
-            access_token = AuthService._generate_token(user, 'access', minutes=30)
+            access_token = AuthService._generate_token(user, 'access', minutes=ACCESS_TOKEN_LIFETIME_MINUTES)
 
-            return {
-                'access_token': access_token,
-            }
+            return {'access_token': access_token}
 
         except jwt.ExpiredSignatureError:
             raise AuthenticationFailed('Refresh token has expired')
@@ -100,17 +103,15 @@ class AuthService:
 
     @staticmethod
     def _generate_token(user, token_type, minutes=0, days=0):
-        if token_type == 'access':
-            expiry = datetime.utcnow() + timedelta(minutes=minutes)
-        else:
-            expiry = datetime.utcnow() + timedelta(days=days)
+        now = datetime.utcnow()
+        expiry = now + timedelta(minutes=minutes) if token_type == 'access' else now + timedelta(days=days)
 
         payload = {
             'user_id': user.id,
             'username': user.username,
             'role': user.role,
             'exp': expiry,
-            'iat': datetime.utcnow(),
+            'iat': now,
             'type': token_type,
         }
         return jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
@@ -143,27 +144,67 @@ class UserService:
         return User.objects.filter(role=role, is_active=True)
 
     @staticmethod
+    def list_users(role=None):
+        """Admin only - Section 5.2 Access Control Matrix: Users (CRUD) -> Admin: Full."""
+        queryset = User.objects.all().order_by('-created_at')
+        if role:
+            queryset = queryset.filter(role=role)
+        return queryset
+
+    @staticmethod
     def update_user_profile(user, data):
         allowed_fields = ['first_name', 'last_name', 'email']
-
         for field in allowed_fields:
-            if field in data and data[field]:
+            if field in data:
                 setattr(user, field, data[field])
 
-        user.save()
+        try:
+            user.save()
+        except IntegrityError:
+            raise ValidationError({'email': 'Email already exists'})
+
+        audit_logger.info('profile_updated', extra={'actor': user.id, 'action': 'update_profile', 'target': user.id})
         return user
 
     @staticmethod
-    def change_password(user, old_password, new_password, new_password_confirm):
+    def change_password(user, old_password, new_password):
         if not user.check_password(old_password):
             raise AuthenticationFailed('Current password is incorrect')
 
-        if len(new_password) < 8:
-            raise ValidationError({'new_password': 'Password must be at least 8 characters long'})
-
-        if new_password != new_password_confirm:
-            raise ValidationError({'new_password_confirm': 'Passwords do not match'})
-
         user.set_password(new_password)
         user.save()
+
+        audit_logger.info('password_changed', extra={'actor': user.id, 'action': 'change_password', 'target': user.id})
         return True
+
+    @staticmethod
+    def admin_update_user(actor, user_id, data):
+        """Admin only - Section 5.2 Access Control Matrix: Users (CRUD) -> Admin: Full."""
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            raise ValidationError({'detail': 'User not found'})
+
+        allowed_fields = ['first_name', 'last_name', 'email', 'role', 'is_active']
+        for field in allowed_fields:
+            if field in data:
+                setattr(user, field, data[field])
+
+        try:
+            user.save()
+        except IntegrityError:
+            raise ValidationError({'email': 'Email already exists'})
+
+        audit_logger.info('user_updated_by_admin', extra={'actor': actor.id, 'action': 'admin_update_user', 'target': user.id})
+        return user
+
+    @staticmethod
+    def delete_user(actor, user_id):
+        """Admin only - Section 5.2 Access Control Matrix: Users (CRUD) -> Admin: Full."""
+        try:
+            user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            raise ValidationError({'detail': 'User not found'})
+
+        audit_logger.info('user_deleted_by_admin', extra={'actor': actor.id, 'action': 'delete_user', 'target': user_id})
+        user.delete()
