@@ -20,7 +20,7 @@ class Driver(models.Model):
         db_table = 'drivers'
         indexes = [models.Index(fields=['license_number'])]
 
-    def str(self):
+    def __str__(self):
         return f"{self.user.get_full_name() or self.user.username} ({self.license_number})"
 
     def clean(self):
@@ -72,7 +72,7 @@ class Vehicle(models.Model):
             models.Index(fields=['status']),
         ]
 
-    def str(self):
+    def __str__(self):
         return f"{self.vehicle_id} ({self.license_plate})"
 
     def clean(self):
@@ -92,5 +92,5 @@ class OBU(models.Model):
         db_table = 'obus'
         indexes = [models.Index(fields=['serial_number'])]
 
-    def str(self):
+    def __str__(self):
         return self.serial_number
