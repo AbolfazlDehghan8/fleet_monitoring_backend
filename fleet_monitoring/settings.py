@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'drf_spectacular',
 
     'auth_module',
+    'vehicles_module',
 ]
 
 MIDDLEWARE = [
