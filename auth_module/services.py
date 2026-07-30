@@ -1,27 +1,48 @@
-
 import logging
-from datetime import datetime, timedelta
-
+import uuid
+from datetime import datetime, timedelta, timezone
 import jwt
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from rest_framework.exceptions import AuthenticationFailed
+from .models import RefreshToken, User
 
-from .models import User
 
-# NFR-SEC09: All write operations logged with actor, timestamp, action.
 audit_logger = logging.getLogger('audit')
 
-ACCESS_TOKEN_LIFETIME_MINUTES = 30   # NFR-SEC01
-REFRESH_TOKEN_LIFETIME_DAYS = 7      # NFR-SEC01
+ACCESS_TOKEN_LIFETIME_MINUTES = 30
+REFRESH_TOKEN_LIFETIME_DAYS = 7
 
 
 class AuthService:
 
     @staticmethod
     def register_user(validated_data):
-        """validated_data is expected to already be cleaned by RegisterSerializer."""
+        try:
+            user = User.objects.create_user(
+                username=validated_data['username'],
+                email=validated_data['email'],
+                password=validated_data['password'],
+                role=User.Role.DRIVER,
+                first_name=validated_data.get('first_name', ''),
+                last_name=validated_data.get('last_name', ''),
+            )
+        except IntegrityError as exc:
+            message = str(exc).lower()
+            if 'username' in message:
+                raise ValidationError({'username': 'Username already exists'})
+            if 'email' in message:
+                raise ValidationError({'email': 'Email already exists'})
+            raise ValidationError({'detail': 'Could not create user due to a conflicting record'})
+
+        audit_logger.info(
+            'user_registered', extra={'actor': user.id, 'action': 'register', 'target': user.id}
+        )
+        return user
+
+    @staticmethod
+    def admin_create_user(actor, validated_data):
         role = validated_data.get('role', User.Role.DRIVER)
 
         try:
@@ -42,7 +63,7 @@ class AuthService:
             raise ValidationError({'detail': 'Could not create user due to a conflicting record'})
 
         audit_logger.info(
-            'user_registered', extra={'actor': user.id, 'action': 'register', 'target': user.id}
+            'user_created_by_admin', extra={'actor': actor.id, 'action': 'admin_create_user', 'target': user.id}
         )
         return user
 
@@ -59,7 +80,7 @@ class AuthService:
             raise AuthenticationFailed('User account is disabled')
 
         access_token = AuthService._generate_token(user, 'access', minutes=ACCESS_TOKEN_LIFETIME_MINUTES)
-        refresh_token = AuthService._generate_token(user, 'refresh', days=REFRESH_TOKEN_LIFETIME_DAYS)
+        refresh_token = AuthService._issue_refresh_token(user)
 
         audit_logger.info('user_login', extra={'actor': user.id, 'action': 'login', 'target': user.id})
 
@@ -84,17 +105,33 @@ class AuthService:
             if payload.get('type') != 'refresh':
                 raise AuthenticationFailed('Invalid token type. Use refresh token.')
 
-            try:
-                user = User.objects.get(id=payload['user_id'])
-            except User.DoesNotExist:
-                raise AuthenticationFailed('User not found')
+            jti = payload.get('jti')
+            if not jti:
+                raise AuthenticationFailed('Invalid refresh token')
 
+            try:
+                token_record = RefreshToken.objects.select_related('user').get(jti=jti)
+            except (RefreshToken.DoesNotExist, ValueError):
+                raise AuthenticationFailed('Refresh token has been revoked or does not exist')
+
+            if token_record.revoked:
+                audit_logger.info(
+                    'refresh_token_reuse_detected',
+                    extra={'actor': token_record.user_id, 'action': 'refresh_reuse', 'target': token_record.user_id},
+                )
+                RefreshToken.objects.filter(user_id=token_record.user_id, revoked=False).update(revoked=True)
+                raise AuthenticationFailed('Refresh token has been revoked')
+
+            user = token_record.user
             if not user.is_active:
                 raise AuthenticationFailed('User account is disabled')
 
             access_token = AuthService._generate_token(user, 'access', minutes=ACCESS_TOKEN_LIFETIME_MINUTES)
+            new_refresh_token = AuthService._issue_refresh_token(user, replaces=token_record)
 
-            return {'access_token': access_token}
+            audit_logger.info('token_refreshed', extra={'actor': user.id, 'action': 'refresh', 'target': user.id})
+
+            return {'access_token': access_token, 'refresh_token': new_refresh_token}
 
         except jwt.ExpiredSignatureError:
             raise AuthenticationFailed('Refresh token has expired')
@@ -102,8 +139,21 @@ class AuthService:
             raise AuthenticationFailed('Invalid refresh token')
 
     @staticmethod
+    def logout_user(user, refresh_token=None):
+        if refresh_token:
+            try:
+                payload = jwt.decode(refresh_token, settings.SECRET_KEY, algorithms=['HS256'])
+                jti = payload.get('jti')
+                if jti:
+                    RefreshToken.objects.filter(jti=jti, user=user).update(revoked=True)
+            except jwt.InvalidTokenError:
+                pass
+
+        audit_logger.info('user_logout', extra={'actor': user.id, 'action': 'logout', 'target': user.id})
+
+    @staticmethod
     def _generate_token(user, token_type, minutes=0, days=0):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expiry = now + timedelta(minutes=minutes) if token_type == 'access' else now + timedelta(days=days)
 
         payload = {
@@ -115,6 +165,32 @@ class AuthService:
             'type': token_type,
         }
         return jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
+
+    @staticmethod
+    def _issue_refresh_token(user, replaces=None):
+        now = datetime.now(timezone.utc)
+        expiry = now + timedelta(days=REFRESH_TOKEN_LIFETIME_DAYS)
+        jti = uuid.uuid4()
+
+        payload = {
+            'user_id': user.id,
+            'username': user.username,
+            'role': user.role,
+            'exp': expiry,
+            'iat': now,
+            'type': 'refresh',
+            'jti': str(jti),
+        }
+        token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
+
+        RefreshToken.objects.create(jti=jti, user=user, issued_at=now, expires_at=expiry)
+
+        if replaces is not None:
+            replaces.revoked = True
+            replaces.replaced_by = jti
+            replaces.save(update_fields=['revoked', 'replaced_by'])
+
+        return token
 
 
 class UserService:
@@ -145,7 +221,6 @@ class UserService:
 
     @staticmethod
     def list_users(role=None):
-        """Admin only - Section 5.2 Access Control Matrix: Users (CRUD) -> Admin: Full."""
         queryset = User.objects.all().order_by('-created_at')
         if role:
             queryset = queryset.filter(role=role)
@@ -179,7 +254,6 @@ class UserService:
 
     @staticmethod
     def admin_update_user(actor, user_id, data):
-        """Admin only - Section 5.2 Access Control Matrix: Users (CRUD) -> Admin: Full."""
         try:
             user = User.objects.get(id=user_id)
         except User.DoesNotExist:
@@ -200,7 +274,6 @@ class UserService:
 
     @staticmethod
     def delete_user(actor, user_id):
-        """Admin only - Section 5.2 Access Control Matrix: Users (CRUD) -> Admin: Full."""
         try:
             user = User.objects.get(id=user_id)
         except User.DoesNotExist:
