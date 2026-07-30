@@ -1,3 +1,4 @@
+import uuid
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 
@@ -34,3 +35,20 @@ class User(AbstractUser):
     @property
     def is_driver(self):
         return self.role == self.Role.DRIVER
+
+
+class RefreshToken(models.Model):
+    jti = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='refresh_tokens')
+    issued_at = models.DateTimeField()
+    expires_at = models.DateTimeField(db_index=True)
+    revoked = models.BooleanField(default=False)
+    replaced_by = models.UUIDField(null=True, blank=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'revoked']),
+        ]
+
+    def __str__(self):
+        return f"RefreshToken({self.jti}) user={self.user_id} revoked={self.revoked}"
