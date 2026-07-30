@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -7,9 +8,16 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-i1c79ca#r*+y4kt_*%$u@g9pop&!tgw(4bzt*=t2%0zd&@bccn')
+_INSECURE_DEFAULT_SECRET_KEY = 'django-insecure-i1c79ca#r*+y4kt_*%$u@g9pop&!tgw(4bzt*=t2%0zd&@bccn'
+SECRET_KEY = os.getenv('SECRET_KEY', _INSECURE_DEFAULT_SECRET_KEY)
 
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
+
+
+if not DEBUG and SECRET_KEY == _INSECURE_DEFAULT_SECRET_KEY:
+    raise ImproperlyConfigured(
+        'SECRET_KEY environment variable must be set to a strong, unique value when DEBUG=False.'
+    )
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
@@ -107,10 +115,10 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# CORS settings
+
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
 
-# Django REST Framework settings
+
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -153,10 +161,14 @@ LOGGING = {
         'console': {
             'class': 'logging.StreamHandler',
         },
+        'audit_console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'audit',
+        },
     },
     'loggers': {
         'audit': {
-            'handlers': ['console'],
+            'handlers': ['audit_console'],
             'level': 'INFO',
             'propagate': False,
         },
