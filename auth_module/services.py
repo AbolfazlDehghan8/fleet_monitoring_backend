@@ -20,10 +20,6 @@ class AuthService:
 
     @staticmethod
     def register_user(validated_data):
-        # AUTH_PASSWORD_VALIDATORS (UserAttributeSimilarityValidator, MinimumLengthValidator,
-        # CommonPasswordValidator, NumericPasswordValidator) must actually run, not just be
-        # configured. We validate against an unsaved instance so attribute-similarity checks
-        # (username/email/first_name/last_name) can also be enforced before the user exists.
         unsaved_user = User(
             username=validated_data['username'],
             email=validated_data['email'],
@@ -59,10 +55,6 @@ class AuthService:
 
     @staticmethod
     def admin_create_user(actor, validated_data):
-        # NFR-SEC02: RBAC must be enforced at the view layer AND the service layer.
-        # This check is a deliberate second line of defense — it must not rely solely
-        # on the view's `IsAdmin` permission class, so that this service stays safe
-        # even if called from a future task/command/view that forgets that check.
         if not (actor and getattr(actor, 'is_authenticated', False) and actor.is_admin):
             audit_logger.warning(
                 'unauthorized_admin_create_user_attempt',
@@ -297,7 +289,6 @@ class UserService:
 
     @staticmethod
     def admin_update_user(actor, user_id, data):
-        # NFR-SEC02: second line of defense, independent of the view's IsAdmin permission.
         if not (actor and getattr(actor, 'is_authenticated', False) and actor.is_admin):
             audit_logger.warning(
                 'unauthorized_admin_update_user_attempt',
@@ -325,7 +316,6 @@ class UserService:
 
     @staticmethod
     def delete_user(actor, user_id):
-        # NFR-SEC02: second line of defense, independent of the view's IsAdmin permission.
         if not (actor and getattr(actor, 'is_authenticated', False) and actor.is_admin):
             audit_logger.warning(
                 'unauthorized_delete_user_attempt',
