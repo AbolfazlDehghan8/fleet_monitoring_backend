@@ -1,6 +1,6 @@
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import jwt
 from django.conf import settings
@@ -10,18 +10,17 @@ from rest_framework.exceptions import AuthenticationFailed
 
 from .models import User
 
-# NFR-SEC09: All write operations logged with actor, timestamp, action.
+
 audit_logger = logging.getLogger('audit')
 
-ACCESS_TOKEN_LIFETIME_MINUTES = 30   # NFR-SEC01
-REFRESH_TOKEN_LIFETIME_DAYS = 7      # NFR-SEC01
+ACCESS_TOKEN_LIFETIME_MINUTES = 30
+REFRESH_TOKEN_LIFETIME_DAYS = 7
 
 
 class AuthService:
 
     @staticmethod
     def register_user(validated_data):
-        """validated_data is expected to already be cleaned by RegisterSerializer."""
         role = validated_data.get('role', User.Role.DRIVER)
 
         try:
@@ -103,7 +102,7 @@ class AuthService:
 
     @staticmethod
     def _generate_token(user, token_type, minutes=0, days=0):
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expiry = now + timedelta(minutes=minutes) if token_type == 'access' else now + timedelta(days=days)
 
         payload = {
@@ -145,7 +144,6 @@ class UserService:
 
     @staticmethod
     def list_users(role=None):
-        """Admin only - Section 5.2 Access Control Matrix: Users (CRUD) -> Admin: Full."""
         queryset = User.objects.all().order_by('-created_at')
         if role:
             queryset = queryset.filter(role=role)
@@ -179,7 +177,6 @@ class UserService:
 
     @staticmethod
     def admin_update_user(actor, user_id, data):
-        """Admin only - Section 5.2 Access Control Matrix: Users (CRUD) -> Admin: Full."""
         try:
             user = User.objects.get(id=user_id)
         except User.DoesNotExist:
@@ -200,7 +197,6 @@ class UserService:
 
     @staticmethod
     def delete_user(actor, user_id):
-        """Admin only - Section 5.2 Access Control Matrix: Users (CRUD) -> Admin: Full."""
         try:
             user = User.objects.get(id=user_id)
         except User.DoesNotExist:
