@@ -1,7 +1,6 @@
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
-
 from .models import User
 
 
@@ -34,15 +33,15 @@ class RegisterTests(APITestCase):
         response = self.client.post(self.url, self.payload)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_register_invalid_role_rejected(self):
+    def test_register_role_field_is_ignored_not_validated(self):
         self.payload['role'] = 'super_admin'
         response = self.client.post(self.url, self.payload)
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['role'], 'driver')
 
     def test_password_is_hashed_with_bcrypt(self):
         self.client.post(self.url, self.payload)
         user = User.objects.get(username='driver01')
-        # NFR-SEC03: bcrypt (12 rounds)
         self.assertTrue(user.password.startswith('bcrypt_sha256$'))
 
 
@@ -130,7 +129,6 @@ class ProfileTests(APITestCase):
 
 
 class AdminUserManagementTests(APITestCase):
-    """Section 5.2 Access Control Matrix: Users (CRUD) -> Admin only."""
 
     def setUp(self):
         self.admin = User.objects.create_user(
@@ -183,3 +181,93 @@ class AdminUserManagementTests(APITestCase):
         self._login_as('driver04', 'StrongPass123')
         response = self.client.delete(reverse('admin-user-detail', args=[self.admin.id]))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_create_user_with_any_role(self):
+        self._login_as('admin01', 'StrongPass123')
+        response = self.client.post(reverse('admin-user-list'), {
+            'username': 'newmanager', 'email': 'nm@example.com',
+            'password': 'StrongPass123', 'password_confirm': 'StrongPass123',
+            'role': 'fleet_manager', 'first_name': 'New', 'last_name': 'Manager',
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['role'], 'fleet_manager')
+
+    def test_non_admin_cannot_create_user(self):
+        self._login_as('driver04', 'StrongPass123')
+        response = self.client.post(reverse('admin-user-list'), {
+            'username': 'newmanager2', 'email': 'nm2@example.com',
+            'password': 'StrongPass123', 'password_confirm': 'StrongPass123',
+            'role': 'fleet_manager',
+        })
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class RegisterPrivilegeEscalationTests(APITestCase):
+
+    def test_self_register_ignores_role_field_and_forces_driver(self):
+        url = reverse('register')
+        payload = {
+            'username': 'hacker', 'email': 'hacker@example.com',
+            'password': 'StrongPass123', 'password_confirm': 'StrongPass123',
+            'role': 'admin', 'first_name': 'H', 'last_name': 'K',
+        }
+        response = self.client.post(url, payload)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['role'], 'driver')
+
+        user = User.objects.get(username='hacker')
+        self.assertEqual(user.role, User.Role.DRIVER)
+        self.assertFalse(user.is_admin)
+
+    def test_register_ignores_elevated_role_for_fleet_manager_too(self):
+        url = reverse('register')
+        response = self.client.post(url, {
+            'username': 'hacker2', 'email': 'hacker2@example.com',
+            'password': 'StrongPass123', 'password_confirm': 'StrongPass123',
+            'role': 'fleet_manager',
+        })
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['role'], 'driver')
+
+
+class RefreshTokenRotationTests(APITestCase):
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='rotate01', email='rotate01@example.com', password='StrongPass123', role='driver'
+        )
+        login = self.client.post(reverse('login'), {'username': 'rotate01', 'password': 'StrongPass123'})
+        self.first_refresh_token = login.data['refresh_token']
+
+    def test_refresh_rotates_and_returns_new_refresh_token(self):
+        response = self.client.post(reverse('refresh'), {'refresh_token': self.first_refresh_token})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('access_token', response.data)
+        self.assertIn('refresh_token', response.data)
+        self.assertNotEqual(response.data['refresh_token'], self.first_refresh_token)
+
+    def test_old_refresh_token_cannot_be_reused_after_rotation(self):
+        self.client.post(reverse('refresh'), {'refresh_token': self.first_refresh_token})
+        response = self.client.post(reverse('refresh'), {'refresh_token': self.first_refresh_token})
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_reuse_of_rotated_token_revokes_whole_chain(self):
+        first_rotation = self.client.post(reverse('refresh'), {'refresh_token': self.first_refresh_token})
+        new_refresh_token = first_rotation.data['refresh_token']
+
+        self.client.post(reverse('refresh'), {'refresh_token': self.first_refresh_token})
+
+        response = self.client.post(reverse('refresh'), {'refresh_token': new_refresh_token})
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_logout_revokes_refresh_token(self):
+        login = self.client.post(reverse('login'), {'username': 'rotate01', 'password': 'StrongPass123'})
+        access_token = login.data['access_token']
+        refresh_token = login.data['refresh_token']
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
+        logout_response = self.client.post(reverse('logout'), {'refresh_token': refresh_token})
+        self.assertEqual(logout_response.status_code, status.HTTP_200_OK)
+
+        refresh_response = self.client.post(reverse('refresh'), {'refresh_token': refresh_token})
+        self.assertEqual(refresh_response.status_code, status.HTTP_401_UNAUTHORIZED)
