@@ -3,9 +3,10 @@ import uuid
 from datetime import datetime, timedelta, timezone
 import jwt
 from django.conf import settings
+from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from .models import RefreshToken, User
 
 
@@ -19,6 +20,21 @@ class AuthService:
 
     @staticmethod
     def register_user(validated_data):
+        # AUTH_PASSWORD_VALIDATORS (UserAttributeSimilarityValidator, MinimumLengthValidator,
+        # CommonPasswordValidator, NumericPasswordValidator) must actually run, not just be
+        # configured. We validate against an unsaved instance so attribute-similarity checks
+        # (username/email/first_name/last_name) can also be enforced before the user exists.
+        unsaved_user = User(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            first_name=validated_data.get('first_name', ''),
+            last_name=validated_data.get('last_name', ''),
+        )
+        try:
+            validate_password(validated_data['password'], user=unsaved_user)
+        except ValidationError as exc:
+            raise ValidationError({'password': exc.messages})
+
         try:
             user = User.objects.create_user(
                 username=validated_data['username'],
@@ -43,7 +59,29 @@ class AuthService:
 
     @staticmethod
     def admin_create_user(actor, validated_data):
+        # NFR-SEC02: RBAC must be enforced at the view layer AND the service layer.
+        # This check is a deliberate second line of defense — it must not rely solely
+        # on the view's `IsAdmin` permission class, so that this service stays safe
+        # even if called from a future task/command/view that forgets that check.
+        if not (actor and getattr(actor, 'is_authenticated', False) and actor.is_admin):
+            audit_logger.warning(
+                'unauthorized_admin_create_user_attempt',
+                extra={'actor': getattr(actor, 'id', None), 'action': 'admin_create_user', 'target': None},
+            )
+            raise PermissionDenied('Only admins may provision users.')
+
         role = validated_data.get('role', User.Role.DRIVER)
+
+        unsaved_user = User(
+            username=validated_data['username'],
+            email=validated_data['email'],
+            first_name=validated_data.get('first_name', ''),
+            last_name=validated_data.get('last_name', ''),
+        )
+        try:
+            validate_password(validated_data['password'], user=unsaved_user)
+        except ValidationError as exc:
+            raise ValidationError({'password': exc.messages})
 
         try:
             user = User.objects.create_user(
@@ -246,6 +284,11 @@ class UserService:
         if not user.check_password(old_password):
             raise AuthenticationFailed('Current password is incorrect')
 
+        try:
+            validate_password(new_password, user=user)
+        except ValidationError as exc:
+            raise ValidationError({'new_password': exc.messages})
+
         user.set_password(new_password)
         user.save()
 
@@ -254,6 +297,14 @@ class UserService:
 
     @staticmethod
     def admin_update_user(actor, user_id, data):
+        # NFR-SEC02: second line of defense, independent of the view's IsAdmin permission.
+        if not (actor and getattr(actor, 'is_authenticated', False) and actor.is_admin):
+            audit_logger.warning(
+                'unauthorized_admin_update_user_attempt',
+                extra={'actor': getattr(actor, 'id', None), 'action': 'admin_update_user', 'target': user_id},
+            )
+            raise PermissionDenied('Only admins may update other users.')
+
         try:
             user = User.objects.get(id=user_id)
         except User.DoesNotExist:
@@ -274,6 +325,14 @@ class UserService:
 
     @staticmethod
     def delete_user(actor, user_id):
+        # NFR-SEC02: second line of defense, independent of the view's IsAdmin permission.
+        if not (actor and getattr(actor, 'is_authenticated', False) and actor.is_admin):
+            audit_logger.warning(
+                'unauthorized_delete_user_attempt',
+                extra={'actor': getattr(actor, 'id', None), 'action': 'delete_user', 'target': user_id},
+            )
+            raise PermissionDenied('Only admins may delete users.')
+
         try:
             user = User.objects.get(id=user_id)
         except User.DoesNotExist:
