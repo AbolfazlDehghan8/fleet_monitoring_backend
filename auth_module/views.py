@@ -45,7 +45,7 @@ class RegisterView(APIView):
     )
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)  # AP-10: API schema -> serializer layer
+        serializer.is_valid(raise_exception=True)
 
         try:
             user = AuthService.register_user(serializer.validated_data)
