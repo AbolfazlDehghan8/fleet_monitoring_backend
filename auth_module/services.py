@@ -2,6 +2,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 import jwt
+from django.contrib.auth import authenticate
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
@@ -99,7 +100,6 @@ class AuthService:
 
     @staticmethod
     def login_user(username, password):
-        from django.contrib.auth import authenticate
 
         user = authenticate(username=username, password=password)
 
