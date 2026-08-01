@@ -10,9 +10,11 @@ from rest_framework.views import APIView
 from .models import User
 from .permissions import IsAdmin
 from .serializers import (
+    AdminUserCreateSerializer,
     AdminUserUpdateSerializer,
     ChangePasswordSerializer,
     LoginSerializer,
+    LogoutSerializer,
     ProfileUpdateSerializer,
     RefreshTokenSerializer,
     RegisterSerializer,
@@ -35,7 +37,11 @@ class RegisterView(APIView):
         request=RegisterSerializer,
         responses={201: UserSerializer, 400: 'Bad Request'},
         summary='Register a new user',
-        description='Create a new user account with username, email, password, and role',
+        description=(
+            'Create a new user account with username, email, and password. '
+            'All self-registered accounts are created with the driver role; '
+            'elevated roles are assigned by an Admin (see /api/v1/admin/users/).'
+        ),
     )
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
@@ -97,11 +103,20 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
+        request=LogoutSerializer,
         summary='Logout user',
-        description='Logout the current user (client side token discard, per ADR 15.7)',
+        description=(
+            'Logs out the current user. Access tokens remain stateless and simply expire '
+            '(ADR 15.7). If a refresh_token is supplied in the body, it is revoked '
+            'immediately (RSK-S01 mitigation) so it cannot be used again.'
+        ),
     )
     def post(self, request):
-        # With stateless JWT (ADR 15.7), logout is handled client-side.
+        serializer = LogoutSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        AuthService.logout_user(request.user, serializer.validated_data.get('refresh_token'))
+
         return Response({'message': 'Successfully logged out'}, status=status.HTTP_200_OK)
 
 
@@ -148,11 +163,6 @@ class ChangePasswordView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        if data['new_password'] != data['new_password_confirm']:
-            return Response(
-                {'new_password_confirm': 'Passwords do not match'}, status=status.HTTP_400_BAD_REQUEST
-            )
-
         try:
             UserService.change_password(request.user, data['old_password'], data['new_password'])
         except AuthenticationFailed as exc:
@@ -162,7 +172,6 @@ class ChangePasswordView(APIView):
 
 
 class AdminUserListView(APIView):
-    """Section 5.2 Access Control Matrix: Users (CRUD) -> Admin: Full, others: none."""
 
     permission_classes = [IsAuthenticated, IsAdmin]
 
@@ -176,9 +185,28 @@ class AdminUserListView(APIView):
         users = UserService.list_users(role=role)
         return Response(UserSerializer(users, many=True).data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        request=AdminUserCreateSerializer,
+        responses={201: UserSerializer, 400: 'Bad Request', 403: 'Forbidden'},
+        summary='Create (provision) a user with any role (admin only)',
+        description=(
+            'Section 2.1: System Administrators own user provisioning and role assignment. '
+            'Unlike public registration, this endpoint may create admin/fleet_manager accounts.'
+        ),
+    )
+    def post(self, request):
+        serializer = AdminUserCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            user = AuthService.admin_create_user(request.user, serializer.validated_data)
+        except ValidationError as exc:
+            return _validation_error_response(exc)
+
+        return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
+
 
 class AdminUserDetailView(APIView):
-    """Section 5.2 Access Control Matrix: Users (CRUD) -> Admin: Full, others: none."""
 
     permission_classes = [IsAuthenticated, IsAdmin]
 
