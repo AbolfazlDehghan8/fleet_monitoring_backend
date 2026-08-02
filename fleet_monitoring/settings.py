@@ -36,6 +36,7 @@ INSTALLED_APPS = [
 
     'auth_module',
     'vehicles_module',
+    'telemetry_module',
 ]
 
 MIDDLEWARE = [
