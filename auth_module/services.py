@@ -6,7 +6,7 @@ from django.contrib.auth import authenticate
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, transaction
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from .models import RefreshToken, User
 
@@ -33,14 +33,15 @@ class AuthService:
             raise ValidationError({'password': exc.messages})
 
         try:
-            user = User.objects.create_user(
-                username=validated_data['username'],
-                email=validated_data['email'],
-                password=validated_data['password'],
-                role=User.Role.DRIVER,
-                first_name=validated_data.get('first_name', ''),
-                last_name=validated_data.get('last_name', ''),
-            )
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    username=validated_data['username'],
+                    email=validated_data['email'],
+                    password=validated_data['password'],
+                    role=User.Role.DRIVER,
+                    first_name=validated_data.get('first_name', ''),
+                    last_name=validated_data.get('last_name', ''),
+                )
         except IntegrityError as exc:
             message = str(exc).lower()
             if 'username' in message:
@@ -77,14 +78,15 @@ class AuthService:
             raise ValidationError({'password': exc.messages})
 
         try:
-            user = User.objects.create_user(
-                username=validated_data['username'],
-                email=validated_data['email'],
-                password=validated_data['password'],
-                role=role,
-                first_name=validated_data.get('first_name', ''),
-                last_name=validated_data.get('last_name', ''),
-            )
+            with transaction.atomic():
+                user = User.objects.create_user(
+                    username=validated_data['username'],
+                    email=validated_data['email'],
+                    password=validated_data['password'],
+                    role=role,
+                    first_name=validated_data.get('first_name', ''),
+                    last_name=validated_data.get('last_name', ''),
+                )
         except IntegrityError as exc:
             message = str(exc).lower()
             if 'username' in message:
@@ -264,7 +266,8 @@ class UserService:
                 setattr(user, field, data[field])
 
         try:
-            user.save()
+            with transaction.atomic():
+                user.save()
         except IntegrityError:
             raise ValidationError({'email': 'Email already exists'})
 
@@ -307,7 +310,8 @@ class UserService:
                 setattr(user, field, data[field])
 
         try:
-            user.save()
+            with transaction.atomic():
+                user.save()
         except IntegrityError:
             raise ValidationError({'email': 'Email already exists'})
 
