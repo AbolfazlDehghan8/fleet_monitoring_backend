@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .permissions import IsAdminOrFleetManager, IsDriver
+from auth_module.permissions import IsAdminOrFleetManager, IsDriver
 from .serializers import (
     DriverCreateSerializer,
     DriverSerializer,
