@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 _INSECURE_DEFAULT_SECRET_KEY = 'django-insecure-i1c79ca#r*+y4kt_*%$u@g9pop&!tgw(4bzt*=t2%0zd&@bccn'
@@ -13,14 +12,12 @@ SECRET_KEY = os.getenv('SECRET_KEY', _INSECURE_DEFAULT_SECRET_KEY)
 
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
-
 if not DEBUG and SECRET_KEY == _INSECURE_DEFAULT_SECRET_KEY:
     raise ImproperlyConfigured(
         'SECRET_KEY environment variable must be set to a strong, unique value when DEBUG=False.'
     )
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
-
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -81,14 +78,12 @@ DATABASES = {
     }
 }
 
-
 AUTH_USER_MODEL = 'auth_module.User'
 
 PASSWORD_HASHERS = [
     'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
     'django.contrib.auth.hashers.PBKDF2PasswordHasher',
 ]
-
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -117,9 +112,7 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
-
 
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
@@ -131,7 +124,6 @@ REST_FRAMEWORK = {
     ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 100,
-
     'DEFAULT_THROTTLE_CLASSES': [
         'rest_framework.throttling.UserRateThrottle',
     ],
@@ -139,9 +131,9 @@ REST_FRAMEWORK = {
         'user': '1000/min',
         'login': '30/min',
         'register': '10/min',
+        'ingestion': '100/min',
     },
 }
-
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Fleet Monitoring API',
@@ -149,7 +141,6 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '1.0.0',
     'SERVE_INCLUDE_SCHEMA': False,
 }
-
 
 LOGGING = {
     'version': 1,
@@ -177,7 +168,6 @@ LOGGING = {
     },
 }
 
-
 CACHES = {
     'default': {
         'BACKEND': 'django_redis.cache.RedisCache',
@@ -187,3 +177,25 @@ CACHES = {
         }
     }
 }
+
+from kombu import Exchange, Queue
+
+CELERY_BROKER_URL = os.getenv('RABBITMQ_URL', 'amqp://guest:guest@localhost:5672//')
+CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND_URL', 'redis://localhost:6379/2')
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TASK_ACKS_LATE = True
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+
+telemetry_exchange = Exchange('fleet.telemetry', type='direct', durable=True)
+
+CELERY_TASK_QUEUES = (
+    Queue('telemetry.raw.process', telemetry_exchange, routing_key='telemetry.raw.process', durable=True),
+)
+CELERY_TASK_DEFAULT_QUEUE = 'telemetry.raw.process'
+CELERY_TASK_DEFAULT_EXCHANGE = 'fleet.telemetry'
+CELERY_TASK_DEFAULT_ROUTING_KEY = 'telemetry.raw.process'
+
+CELERY_TASK_ALWAYS_EAGER = os.getenv('CELERY_TASK_ALWAYS_EAGER', 'False').lower() == 'true'
+CELERY_TASK_EAGER_PROPAGATES = True
