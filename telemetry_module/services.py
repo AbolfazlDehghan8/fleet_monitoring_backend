@@ -106,6 +106,9 @@ class TelemetryService:
             extra={'actor': 'obu', 'action': 'ingest', 'target': vehicle.vehicle_id},
         )
 
+        from rules_module.services import RuleService
+        RuleService.evaluate(log)
+
     @staticmethod
     def list_telemetry(user, vehicle_id=None):
         if user.role == 'admin':
