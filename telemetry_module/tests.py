@@ -2,6 +2,7 @@ from django.core.cache import cache
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
+from unittest.mock import patch
 
 from auth_module.models import User
 from vehicles_module.models import Driver, Vehicle
@@ -113,6 +114,13 @@ class TelemetryPersistenceTests(TelemetryTestBase):
         TelemetryService.persist_packet(VALID_PACKET)
         TelemetryService.persist_packet(VALID_PACKET)
         self.assertEqual(TelemetryLog.objects.count(), 1)
+
+    def test_persist_triggers_rule_evaluation(self):
+        with patch('rules_module.services.RuleService.evaluate') as mock_evaluate:
+            TelemetryService.persist_packet(VALID_PACKET)
+            self.assertTrue(mock_evaluate.called)
+            log_arg = mock_evaluate.call_args[0][0]
+            self.assertEqual(log_arg.vehicle.vehicle_id, VALID_PACKET['vehicle_id'])
 
     def test_telemetry_log_cannot_be_updated(self):
         TelemetryService.persist_packet(VALID_PACKET)
