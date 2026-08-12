@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     'vehicles_module',
     'telemetry_module',
     'rules_module',
+    'alerts_module',
 ]
 
 MIDDLEWARE = [
