@@ -78,4 +78,11 @@ class RuleService:
                 },
             )
 
+        from alerts_module.services import AlertService
+        for violation in violations:
+            AlertService.create_from_violation(violation)
+
         return violations
+
+
+
