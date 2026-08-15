@@ -1,3 +1,71 @@
-from django.shortcuts import render
+from drf_spectacular.utils import extend_schema
+from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-# Create your views here.
+from auth_module.permissions import IsAdminOrFleetManager, IsDriver
+
+from .serializers import AlertSerializer
+from .services import AlertService
+
+
+class AlertListView(APIView):
+
+    permission_classes = [IsAuthenticated, IsAdminOrFleetManager]
+
+    @extend_schema(
+        responses={200: AlertSerializer(many=True)},
+        summary='List alerts',
+        description='Admin sees all alerts; Fleet Manager sees alerts for assigned vehicles',
+    )
+    def get(self, request):
+        alerts = AlertService.list_alerts(request.user)
+        return Response(AlertSerializer(alerts, many=True).data, status=status.HTTP_200_OK)
+
+
+class AlertMeView(APIView):
+
+    permission_classes = [IsAuthenticated, IsDriver]
+
+    @extend_schema(responses={200: AlertSerializer(many=True)}, summary="Get the driver's own vehicle alerts")
+    def get(self, request):
+        alerts = AlertService.list_alerts_for_driver(request.user)
+        return Response(AlertSerializer(alerts, many=True).data, status=status.HTTP_200_OK)
+
+
+class AlertDetailView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(responses={200: AlertSerializer, 404: 'Not Found'}, summary='Retrieve an alert')
+    def get(self, request, alert_id):
+        try:
+            alert = AlertService.get_alert(request.user, alert_id)
+        except PermissionDenied as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+        if alert is None:
+            return Response({'detail': 'Alert not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
+
+
+class AlertAcknowledgeView(APIView):
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={200: AlertSerializer, 403: 'Forbidden', 404: 'Not Found'},
+        summary='Acknowledge an alert',
+        description='Idempotent: acknowledging an already-acknowledged alert is a no-op that still returns 200',
+    )
+    def post(self, request, alert_id):
+        try:
+            alert = AlertService.acknowledge(request.user, alert_id)
+        except PermissionDenied as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+        if alert is None:
+            return Response({'detail': 'Alert not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
