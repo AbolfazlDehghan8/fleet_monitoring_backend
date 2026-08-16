@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 from django.core.cache import cache
 from django.urls import reverse
 from rest_framework import status
@@ -169,3 +171,38 @@ class RuleEvaluationTests(RulesTestBase):
 
         violations = RuleService.evaluate(log)
         self.assertEqual(len(violations), 0)
+
+    def test_evaluate_triggers_alert_creation_on_violation(self):
+        Rule.objects.create(
+            name='High temp', metric='engine_temperature', operator='gt', threshold=100,
+            severity='high', created_by=self.admin,
+        )
+
+        from telemetry_module.models import TelemetryLog
+        log = TelemetryLog.objects.create(
+            vehicle=self.vehicle, obu_serial='OBU-TEST', timestamp='2025-07-11T14:32:01.234Z',
+            speed=60, engine_temperature=115, battery_voltage=12.5, fuel_level=50,
+            latitude=0, longitude=0, odometer=1000, raw_payload={},
+        )
+
+        with patch('alerts_module.services.AlertService.create_from_violation') as mock_create:
+            RuleService.evaluate(log)
+            self.assertEqual(mock_create.call_count, 1)
+            self.assertEqual(mock_create.call_args[0][0]['metric'], 'engine_temperature')
+
+    def test_no_violation_means_no_alert_call(self):
+        Rule.objects.create(
+            name='High temp', metric='engine_temperature', operator='gt', threshold=999,
+            severity='high', created_by=self.admin,
+        )
+
+        from telemetry_module.models import TelemetryLog
+        log = TelemetryLog.objects.create(
+            vehicle=self.vehicle, obu_serial='OBU-TEST', timestamp='2025-07-11T14:32:01.234Z',
+            speed=60, engine_temperature=115, battery_voltage=12.5, fuel_level=50,
+            latitude=0, longitude=0, odometer=1000, raw_payload={},
+        )
+
+        with patch('alerts_module.services.AlertService.create_from_violation') as mock_create:
+            RuleService.evaluate(log)
+            self.assertEqual(mock_create.call_count, 0)
