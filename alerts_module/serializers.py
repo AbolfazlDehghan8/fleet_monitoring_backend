@@ -14,3 +14,7 @@ class AlertSerializer(serializers.ModelSerializer):
             'acknowledged', 'acknowledged_by_username', 'acknowledged_at', 'created_at',
         ]
         read_only_fields = fields
+
+
+class AcknowledgeOwnAlertSerializer(serializers.Serializer):
+    alert_id = serializers.IntegerField()
