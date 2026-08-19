@@ -151,3 +151,32 @@ class AlertAcknowledgeTests(AlertsTestBase):
     def test_unauthenticated_cannot_acknowledge(self):
         response = self.client.post(reverse('alert-acknowledge', args=[self.alert.id]))
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class AlertMeAcknowledgeTests(AlertsTestBase):
+
+    def test_driver_can_acknowledge_own_alert_via_me_endpoint(self):
+        self._auth_as('driveruser')
+        response = self.client.post(reverse('alert-me-acknowledge'), {'alert_id': self.alert.id})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.alert.refresh_from_db()
+        self.assertTrue(self.alert.acknowledged)
+
+    def test_driver_cannot_acknowledge_other_vehicle_alert_via_me_endpoint(self):
+        other_driver_user = User.objects.create_user(
+            username='otherdriver', email='od@example.com', password='StrongPass123', role='driver'
+        )
+        Driver.objects.create(user=other_driver_user, license_number='LIC-002')
+        self._auth_as('otherdriver')
+        response = self.client.post(reverse('alert-me-acknowledge'), {'alert_id': self.alert.id})
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_cannot_use_driver_me_endpoint(self):
+        self._auth_as('admin')
+        response = self.client.post(reverse('alert-me-acknowledge'), {'alert_id': self.alert.id})
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_missing_alert_id_rejected(self):
+        self._auth_as('driveruser')
+        response = self.client.post(reverse('alert-me-acknowledge'), {})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
