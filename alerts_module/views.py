@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 
 from auth_module.permissions import IsAdminOrFleetManager, IsDriver
 
-from .serializers import AlertSerializer
+from .serializers import AcknowledgeOwnAlertSerializer, AlertSerializer
 from .services import AlertService
 
 
@@ -63,6 +63,29 @@ class AlertAcknowledgeView(APIView):
     def post(self, request, alert_id):
         try:
             alert = AlertService.acknowledge(request.user, alert_id)
+        except PermissionDenied as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+        if alert is None:
+            return Response({'detail': 'Alert not found'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
+
+
+class AlertMeAcknowledgeView(APIView):
+
+    permission_classes = [IsAuthenticated, IsDriver]
+
+    @extend_schema(
+        request=AcknowledgeOwnAlertSerializer,
+        responses={200: AlertSerializer, 400: 'Bad Request', 403: 'Forbidden', 404: 'Not Found'},
+        summary="Acknowledge one of the driver's own alerts",
+    )
+    def post(self, request):
+        serializer = AcknowledgeOwnAlertSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            alert = AlertService.acknowledge(request.user, serializer.validated_data['alert_id'])
         except PermissionDenied as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
 
