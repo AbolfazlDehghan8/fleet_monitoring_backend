@@ -43,9 +43,11 @@ class TelemetryService:
         TelemetryService._check_scope(actor, vehicle)
 
         from .tasks import process_telemetry_packet
+        from fleet_monitoring.middleware import get_correlation_id
 
         packet = dict(validated_data)
         packet['timestamp'] = packet['timestamp'].isoformat()
+        packet['correlation_id'] = get_correlation_id()
 
         try:
             result = process_telemetry_packet.apply_async(
