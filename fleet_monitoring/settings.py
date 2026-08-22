@@ -149,23 +149,35 @@ SPECTACULAR_SETTINGS = {
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
+    'filters': {
+        'correlation_id': {
+            '()': 'fleet_monitoring.logging_utils.CorrelationIdFilter',
+        },
+    },
     'formatters': {
-        'audit': {
-            'format': '%(asctime)s | actor=%(actor)s | action=%(action)s | %(message)s',
+        'json': {
+            '()': 'fleet_monitoring.logging_utils.JsonFormatter',
         },
     },
     'handlers': {
         'console': {
             'class': 'logging.StreamHandler',
+            'formatter': 'json',
+            'filters': ['correlation_id'],
         },
-        'audit_console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'audit',
-        },
+    },
+    'root': {
+        'handlers': ['console'],
+        'level': 'INFO',
     },
     'loggers': {
         'audit': {
-            'handlers': ['audit_console'],
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django': {
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': False,
         },
