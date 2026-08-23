@@ -163,3 +163,47 @@ class TelemetryReadTests(TelemetryTestBase):
         response = self.client.get(reverse('telemetry-me'))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
+
+
+class TelemetryRetentionAndHealthCheckTests(APITestCase):
+    def setUp(self):
+        cache.clear()
+        self.manager = User.objects.create_user(
+            username='fm_ret', email='fm_ret@example.com', password='StrongPass123', role='fleet_manager'
+        )
+        self.vehicle = Vehicle.objects.create(
+            vehicle_id='veh_retention', license_plate='RET-001', assigned_manager=self.manager,
+        )
+
+    def test_cleanup_old_telemetry_deletes_only_expired_rows(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from .tasks import cleanup_old_telemetry
+
+        old_log = TelemetryLog.objects.create(
+            vehicle=self.vehicle, obu_serial='OBU-OLD',
+            timestamp=timezone.now() - timedelta(days=400),
+            speed=10, engine_temperature=80, battery_voltage=12, fuel_level=50,
+            latitude=0, longitude=0, odometer=1, raw_payload={},
+        )
+        recent_log = TelemetryLog.objects.create(
+            vehicle=self.vehicle, obu_serial='OBU-NEW',
+            timestamp=timezone.now(),
+            speed=10, engine_temperature=80, battery_voltage=12, fuel_level=50,
+            latitude=0, longitude=0, odometer=2, raw_payload={},
+        )
+
+        deleted_count = cleanup_old_telemetry()
+
+        self.assertEqual(deleted_count, 1)
+        self.assertFalse(TelemetryLog.objects.filter(id=old_log.id).exists())
+        self.assertTrue(TelemetryLog.objects.filter(id=recent_log.id).exists())
+
+    def test_system_health_check_reports_database_and_cache_ok(self):
+        from .tasks import system_health_check
+
+        health = system_health_check()
+        self.assertTrue(health['database'])
+        self.assertTrue(health['cache'])
