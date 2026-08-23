@@ -205,13 +205,67 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
 telemetry_exchange = Exchange('fleet.telemetry', type='direct', durable=True)
+dlx_exchange = Exchange('fleet.dlx', type='direct', durable=True)
+
+DEAD_LETTER_QUEUE_ARGUMENTS = {
+    'x-dead-letter-exchange': 'fleet.dlx',
+    'x-dead-letter-routing-key': 'tasks.dead_letter',
+}
 
 CELERY_TASK_QUEUES = (
-    Queue('telemetry.raw.process', telemetry_exchange, routing_key='telemetry.raw.process', durable=True),
+    Queue(
+        'telemetry.raw.process', telemetry_exchange, routing_key='telemetry.raw.process',
+        durable=True, queue_arguments=DEAD_LETTER_QUEUE_ARGUMENTS,
+    ),
+    Queue(
+        'alerts.trigger.notify', telemetry_exchange, routing_key='alerts.trigger.notify',
+        durable=True, queue_arguments=DEAD_LETTER_QUEUE_ARGUMENTS,
+    ),
+    Queue(
+        'reports.generate', telemetry_exchange, routing_key='reports.generate',
+        durable=True, queue_arguments=DEAD_LETTER_QUEUE_ARGUMENTS,
+    ),
+    Queue('tasks.dead_letter', dlx_exchange, routing_key='tasks.dead_letter', durable=True),
 )
 CELERY_TASK_DEFAULT_QUEUE = 'telemetry.raw.process'
 CELERY_TASK_DEFAULT_EXCHANGE = 'fleet.telemetry'
 CELERY_TASK_DEFAULT_ROUTING_KEY = 'telemetry.raw.process'
 
+CELERY_TASK_ROUTES = {
+    'telemetry_module.tasks.*': {'queue': 'telemetry.raw.process'},
+    'alerts_module.tasks.*': {'queue': 'alerts.trigger.notify'},
+    'reports_module.tasks.*': {'queue': 'reports.generate'},
+}
+
 CELERY_TASK_ALWAYS_EAGER = os.getenv('CELERY_TASK_ALWAYS_EAGER', 'False').lower() == 'true'
 CELERY_TASK_EAGER_PROPAGATES = True
+
+from celery.schedules import crontab
+
+CELERY_BEAT_SCHEDULE = {
+    'telemetry-retention-cleanup': {
+        'task': 'telemetry_module.tasks.cleanup_old_telemetry',
+        'schedule': crontab(hour=2, minute=0),
+        'options': {'queue': 'telemetry.raw.process'},
+    },
+    'daily-fleet-summary-report': {
+        'task': 'reports_module.tasks.generate_scheduled_fleet_report',
+        'schedule': crontab(hour=6, minute=0),
+        'options': {'queue': 'reports.generate'},
+    },
+    'system-health-heartbeat': {
+        'task': 'telemetry_module.tasks.system_health_check',
+        'schedule': 300.0,
+        'options': {'queue': 'telemetry.raw.process'},
+    },
+}
+
+TELEMETRY_RETENTION_DAYS = int(os.getenv('TELEMETRY_RETENTION_DAYS', '365'))
+
+EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.console.EmailBackend')
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '25'))
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'False') == 'True'
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'alerts@fleet-monitoring.local')
