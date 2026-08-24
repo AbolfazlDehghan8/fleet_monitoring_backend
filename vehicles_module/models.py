@@ -3,6 +3,25 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 
+class Company(models.Model):
+
+    name = models.CharField(max_length=150, unique=True)
+    registration_number = models.CharField(max_length=50, blank=True)
+    address = models.CharField(max_length=255, blank=True)
+    contact_email = models.EmailField(blank=True)
+    contact_phone = models.CharField(max_length=20, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'companies'
+        verbose_name_plural = 'companies'
+
+    def __str__(self):
+        return self.name
+
+
 class Driver(models.Model):
 
     user = models.OneToOneField(
@@ -37,6 +56,10 @@ class Vehicle(models.Model):
         DECOMMISSIONED = 'decommissioned', 'Decommissioned'
 
     vehicle_id = models.CharField(max_length=50, unique=True, db_index=True)
+
+    company = models.ForeignKey(
+        Company, on_delete=models.PROTECT, null=True, blank=True, related_name='vehicles',
+    )
 
     license_plate = models.CharField(max_length=20, unique=True)
     vin = models.CharField(max_length=17, unique=True, null=True, blank=True)
