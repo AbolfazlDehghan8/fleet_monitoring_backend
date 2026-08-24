@@ -1,4 +1,5 @@
 from django.core.cache import cache
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -180,3 +181,55 @@ class AlertMeAcknowledgeTests(AlertsTestBase):
         self._auth_as('driveruser')
         response = self.client.post(reverse('alert-me-acknowledge'), {})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+class AlertNotificationTests(AlertsTestBase):
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_notification_email_sent_to_assigned_manager_and_admins(self):
+        from django.core import mail
+
+        mail.outbox = []
+        violation = dict(
+            VIOLATION, rule_id=self.rule.id, telemetry_log_id=self.log.id, vehicle_id='veh_alert_1',
+        )
+        AlertService.create_from_violation(violation)
+
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertIn(self.manager.email, sent.to)
+        self.assertIn(self.admin.email, sent.to)
+        self.assertIn('veh_alert_1', sent.subject)
+
+    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+    def test_notification_skipped_gracefully_when_no_recipients(self):
+        from django.core import mail
+
+        User.objects.filter(role='admin').update(is_active=False)
+        unassigned_vehicle = Vehicle.objects.create(vehicle_id='veh_alert_unassigned', license_plate='UNA-001')
+        log = TelemetryLog.objects.create(
+            vehicle=unassigned_vehicle, obu_serial='OBU-2', timestamp='2025-07-12T00:00:00Z',
+            speed=10, engine_temperature=90, battery_voltage=12, fuel_level=50,
+            latitude=0, longitude=0, odometer=10, raw_payload={},
+        )
+        mail.outbox = []
+        violation = dict(
+            VIOLATION, rule_id=self.rule.id, telemetry_log_id=log.id, vehicle_id='veh_alert_unassigned',
+        )
+        AlertService.create_from_violation(violation)
+        self.assertEqual(len(mail.outbox), 0)
+
+
+class DeadLetterQueueTests(AlertsTestBase):
+    def test_publish_to_dead_letter_does_not_raise_when_broker_unreachable(self):
+        from fleet_monitoring.dead_letter import publish_to_dead_letter
+
+        with override_settings(CELERY_BROKER_URL='amqp://guest:guest@127.0.0.1:1/nonexistent'):
+            try:
+                publish_to_dead_letter(
+                    source_queue='telemetry.raw.process',
+                    task_name='telemetry_module.tasks.process_telemetry_packet',
+                    payload={'vehicle_id': 'veh_x'},
+                    reason='simulated failure',
+                )
+            except Exception as exc:
+                self.fail(f'publish_to_dead_letter raised unexpectedly: {exc}')
