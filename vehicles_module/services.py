@@ -2,7 +2,8 @@ import logging
 
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import IntegrityError
+from django.db import IntegrityError, models
+from django.utils import timezone as django_timezone
 
 from .models import OBU, Driver, Vehicle
 
@@ -10,6 +11,11 @@ audit_logger = logging.getLogger('audit')
 
 VEHICLE_STATUS_CACHE_KEY = 'fleet:vehicle:{id}:status'
 VEHICLE_STATUS_CACHE_TTL_SECONDS = 60
+
+VEHICLE_TELEMETRY_CACHE_KEY = 'fleet:vehicle:{id}:telemetry'
+
+DASHBOARD_STATS_CACHE_KEY = 'fleet:dashboard:stats'
+DASHBOARD_STATS_CACHE_TTL_SECONDS = 30
 
 
 def _not_found(detail='Vehicle not found'):
@@ -136,21 +142,55 @@ class VehicleService:
         vehicle = VehicleService.get_vehicle_for_user(user, vehicle_id)
         cache_key = VEHICLE_STATUS_CACHE_KEY.format(id=vehicle.id)
         cached = cache.get(cache_key)
-        if cached is not None:
-            return cached
+        if cached is None:
+            cached = {
+                'vehicle_id': vehicle.id,
+                'vehicle_identifier': vehicle.vehicle_id,
+                'status': vehicle.status,
+                'updated_at': vehicle.updated_at.isoformat(),
+            }
+            cache.set(cache_key, cached, timeout=VEHICLE_STATUS_CACHE_TTL_SECONDS)
 
-        payload = {
-            'vehicle_id': vehicle.id,
-            'vehicle_identifier': vehicle.vehicle_id,
-            'status': vehicle.status,
-            'updated_at': vehicle.updated_at.isoformat(),
-        }
-        cache.set(cache_key, payload, timeout=VEHICLE_STATUS_CACHE_TTL_SECONDS)
+        payload = dict(cached)
+        live_telemetry = cache.get(VEHICLE_TELEMETRY_CACHE_KEY.format(id=vehicle.id))
+        if live_telemetry:
+            payload['live_telemetry'] = live_telemetry
         return payload
 
     @staticmethod
     def _invalidate_status_cache(vehicle_id):
         cache.delete(VEHICLE_STATUS_CACHE_KEY.format(id=vehicle_id))
+        cache.delete(DASHBOARD_STATS_CACHE_KEY)
+
+    @staticmethod
+    def get_dashboard_stats(user):
+        if user.role not in ('admin', 'fleet_manager'):
+            raise PermissionDenied('Only admin and fleet_manager may view dashboard stats')
+
+        cache_key = DASHBOARD_STATS_CACHE_KEY if user.role == 'admin' else f'{DASHBOARD_STATS_CACHE_KEY}:{user.id}'
+        cached = cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        queryset = Vehicle.objects.all() if user.role == 'admin' else Vehicle.objects.filter(assigned_manager=user)
+
+        from alerts_module.models import Alert
+        alerts_qs = Alert.objects.filter(acknowledged=False)
+        if user.role != 'admin':
+            alerts_qs = alerts_qs.filter(vehicle__assigned_manager=user)
+
+        by_status = {choice.value: 0 for choice in Vehicle.Status}
+        for row in queryset.values('status').annotate(count=models.Count('id')):
+            by_status[row['status']] = row['count']
+
+        payload = {
+            'total_vehicles': queryset.count(),
+            'vehicles_by_status': by_status,
+            'unacknowledged_alerts': alerts_qs.count(),
+            'generated_at': django_timezone.now().isoformat(),
+        }
+        cache.set(cache_key, payload, timeout=DASHBOARD_STATS_CACHE_TTL_SECONDS)
+        return payload
 
 
 class DriverService:
