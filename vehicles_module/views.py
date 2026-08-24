@@ -128,6 +128,23 @@ class VehicleStatusView(APIView):
         return Response(payload, status=status.HTTP_200_OK)
 
 
+class DashboardStatsView(APIView):
+
+    permission_classes = [IsAuthenticated, IsAdminOrFleetManager]
+
+    @extend_schema(
+        responses={200: 'Success', 403: 'Forbidden'},
+        summary='Get cached fleet dashboard statistics',
+        description='Admin sees fleet-wide counters; Fleet Manager sees counters for their own vehicles only.',
+    )
+    def get(self, request):
+        try:
+            stats = VehicleService.get_dashboard_stats(request.user)
+        except PermissionDenied as exc:
+            return _error_response(exc)
+        return Response(stats, status=status.HTTP_200_OK)
+
+
 class VehicleMeView(APIView):
 
     permission_classes = [IsAuthenticated, IsDriver]
