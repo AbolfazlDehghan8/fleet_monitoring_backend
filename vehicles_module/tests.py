@@ -265,3 +265,69 @@ class DriverEndpointTests(VehicleTestBase):
         self._login_as('drv01')
         response = self.client.get(reverse('driver-list-create'))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class CompanyModelTests(VehicleTestBase):
+    def test_company_can_be_created_and_linked_to_vehicle(self):
+        from .models import Company
+
+        company = Company.objects.create(name='Acme Logistics', contact_email='ops@acme.example')
+        vehicle = Vehicle.objects.create(
+            vehicle_id='veh_company_1', license_plate='CMP-001', company=company,
+            assigned_manager=self.manager,
+        )
+        self.assertEqual(vehicle.company.name, 'Acme Logistics')
+        self.assertEqual(company.vehicles.count(), 1)
+
+    def test_vehicle_company_is_optional(self):
+        vehicle = Vehicle.objects.create(
+            vehicle_id='veh_company_2', license_plate='CMP-002', assigned_manager=self.manager,
+        )
+        self.assertIsNone(vehicle.company)
+
+
+class DashboardStatsTests(VehicleTestBase):
+    def setUp(self):
+        super().setUp()
+        self.vehicle = Vehicle.objects.create(
+            vehicle_id='veh_dash_1', license_plate='DSH-001',
+            assigned_manager=self.manager, driver=self.driver, status='active',
+        )
+        Vehicle.objects.create(
+            vehicle_id='veh_dash_2', license_plate='DSH-002',
+            assigned_manager=self.other_manager, status='maintenance',
+        )
+
+    def test_admin_sees_fleet_wide_stats(self):
+        self._login_as('admin01')
+        response = self.client.get(reverse('vehicle-dashboard-stats'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['total_vehicles'], 2)
+        self.assertIn('vehicles_by_status', response.data)
+        self.assertIn('unacknowledged_alerts', response.data)
+
+    def test_fleet_manager_sees_only_their_vehicles(self):
+        self._login_as('fm01')
+        response = self.client.get(reverse('vehicle-dashboard-stats'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['total_vehicles'], 1)
+
+    def test_driver_cannot_access_dashboard_stats(self):
+        self._login_as('drv01')
+        response = self.client.get(reverse('vehicle-dashboard-stats'))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_stats_are_cached_until_a_vehicle_write_invalidates_them(self):
+        self._login_as('admin01')
+        first = self.client.get(reverse('vehicle-dashboard-stats'))
+        self.assertEqual(first.data['total_vehicles'], 2)
+
+        Vehicle.objects.create(vehicle_id='veh_dash_3', license_plate='DSH-003')
+
+        cached = self.client.get(reverse('vehicle-dashboard-stats'))
+        self.assertEqual(cached.data['total_vehicles'], 2)
+
+        self.client.patch(reverse('vehicle-detail', args=[self.vehicle.id]), {'status': 'inactive'})
+
+        refreshed = self.client.get(reverse('vehicle-dashboard-stats'))
+        self.assertEqual(refreshed.data['total_vehicles'], 3)
