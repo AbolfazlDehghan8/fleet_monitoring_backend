@@ -1,18 +1,24 @@
 from django.contrib import admin
 
-from .models import OBU, Driver, Vehicle
+from .models import OBU, Company, Driver, Vehicle
+
+
+@admin.register(Company)
+class CompanyAdmin(admin.ModelAdmin):
+    list_display = ('name', 'registration_number', 'contact_email', 'contact_phone', 'created_at')
+    search_fields = ('name', 'registration_number', 'contact_email')
 
 
 @admin.register(Vehicle)
 class VehicleAdmin(admin.ModelAdmin):
     list_display = (
         'vehicle_id', 'license_plate', 'make', 'model', 'status',
-        'assigned_manager', 'driver', 'created_at',
+        'company', 'assigned_manager', 'driver', 'created_at',
     )
-    list_filter = ('status', 'make')
+    list_filter = ('status', 'make', 'company')
     search_fields = ('vehicle_id', 'license_plate', 'vin')
     ordering = ('-created_at',)
-    autocomplete_fields = ('assigned_manager', 'driver')
+    autocomplete_fields = ('company', 'assigned_manager', 'driver')
 
 
 @admin.register(Driver)
