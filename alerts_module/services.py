@@ -31,6 +31,10 @@ class AlertService:
             'alert_created',
             extra={'actor': 'alert_engine', 'action': 'create_alert', 'target': vehicle.vehicle_id},
         )
+
+        from .tasks import dispatch_alert_notification
+        dispatch_alert_notification.apply_async(args=[alert.id], queue='alerts.trigger.notify')
+
         return alert
 
     @staticmethod
