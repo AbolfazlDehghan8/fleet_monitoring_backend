@@ -146,3 +146,53 @@ class ReportAggregationTests(ReportsTestBase):
         )
         self.assertEqual(report['telemetry']['total_readings'], 0)
         self.assertEqual(report['alerts']['total'], 0)
+
+
+class AsyncReportGenerationTests(ReportsTestBase):
+    def test_generate_queues_report_and_completes_synchronously_in_eager_mode(self):
+        self._auth_as('admin')
+        response = self.client.post(reverse('report-generate'), {})
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+        report_id = response.data['id']
+
+        detail = self.client.get(reverse('report-detail', args=[report_id]))
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail.data['status'], 'completed')
+        self.assertIn('vehicles_by_status', detail.data['result'])
+
+    def test_manager_cannot_view_another_managers_requested_report(self):
+        self._auth_as('manager')
+        response = self.client.post(reverse('report-generate'), {})
+        report_id = response.data['id']
+
+        self._auth_as('manager2')
+        detail = self.client.get(reverse('report-detail', args=[report_id]))
+        self.assertEqual(detail.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_export_returns_csv_for_completed_report(self):
+        self._auth_as('admin')
+        response = self.client.post(reverse('report-generate'), {})
+        report_id = response.data['id']
+
+        export = self.client.get(reverse('report-export', args=[report_id]))
+        self.assertEqual(export.status_code, status.HTTP_200_OK)
+        self.assertEqual(export['Content-Type'], 'text/csv')
+        self.assertIn(b'vehicle_count', export.content)
+
+    def test_export_rejected_when_report_not_yet_completed(self):
+        from .models import Report
+
+        report = Report.objects.create(requested_by=self.admin, status=Report.Status.PENDING)
+        self._auth_as('admin')
+        export = self.client.get(reverse('report-export', args=[report.id]))
+        self.assertEqual(export.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_scheduled_report_task_creates_system_wide_report(self):
+        from .models import Report
+        from .tasks import generate_scheduled_fleet_report
+
+        generate_scheduled_fleet_report()
+        report = Report.objects.latest('created_at')
+        self.assertIsNone(report.requested_by)
+        self.assertEqual(report.status, Report.Status.COMPLETED)
+        self.assertEqual(report.result['vehicle_count'], 2)
