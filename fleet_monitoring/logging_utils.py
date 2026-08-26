@@ -3,7 +3,10 @@ import logging
 
 from .middleware import get_correlation_id
 
-_EXTRA_FIELDS = ('actor', 'action', 'target')
+_EXTRA_FIELDS = ('actor', 'action', 'target', 'status', 'duration_ms')
+_STANDARD_LOGRECORD_ATTRS = frozenset(logging.LogRecord(
+    '', 0, '', 0, '', (), None,
+).__dict__.keys()) | {'correlation_id', 'message'}
 
 
 class CorrelationIdFilter(logging.Filter):
@@ -27,6 +30,9 @@ class JsonFormatter(logging.Formatter):
         for field in _EXTRA_FIELDS:
             if hasattr(record, field):
                 payload[field] = getattr(record, field)
+        for key, value in record.__dict__.items():
+            if key not in _STANDARD_LOGRECORD_ATTRS and key not in _EXTRA_FIELDS:
+                payload[key] = value
         if record.exc_info:
             payload['exception'] = self.formatException(record.exc_info)
         return json.dumps(payload)
