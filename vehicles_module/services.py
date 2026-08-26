@@ -27,9 +27,9 @@ class VehicleService:
     @staticmethod
     def list_vehicles(user):
         queryset = Vehicle.objects.select_related('driver__user', 'assigned_manager', 'obu')
-        if user.role == 'admin':
+        if user.is_admin:
             return queryset
-        if user.role == 'fleet_manager':
+        if user.is_fleet_manager:
             return queryset.filter(assigned_manager=user)
         raise PermissionDenied('Drivers must use /api/v1/vehicles/me/')
 
@@ -41,11 +41,11 @@ class VehicleService:
             _not_found()
             return
 
-        if user.role == 'admin':
+        if user.is_admin:
             return vehicle
-        if user.role == 'fleet_manager' and vehicle.assigned_manager_id == user.id:
+        if user.is_fleet_manager and vehicle.assigned_manager_id == user.id:
             return vehicle
-        if user.role == 'driver' and vehicle.driver_id and vehicle.driver.user_id == user.id:
+        if user.is_driver and vehicle.driver_id and vehicle.driver.user_id == user.id:
             return vehicle
 
         raise PermissionDenied('You do not have access to this vehicle')
@@ -65,7 +65,7 @@ class VehicleService:
         obu_serial = data.pop('obu_serial_number', None)
         obu_firmware = data.pop('obu_firmware_version', '')
 
-        if actor.role == 'fleet_manager':
+        if actor.is_fleet_manager:
             data['assigned_manager'] = actor
 
         vehicle = Vehicle(**data)
@@ -93,7 +93,7 @@ class VehicleService:
         obu_serial = data.pop('obu_serial_number', None)
         obu_firmware = data.pop('obu_firmware_version', None)
 
-        if actor.role == 'fleet_manager':
+        if actor.is_fleet_manager:
             data.pop('assigned_manager', None)
 
         for field, value in data.items():
@@ -124,7 +124,7 @@ class VehicleService:
 
     @staticmethod
     def delete_vehicle(actor, vehicle_id):
-        if actor.role != 'admin':
+        if not actor.is_admin:
             raise PermissionDenied('Only admin can delete vehicles')
 
         deleted, _ = Vehicle.objects.filter(id=vehicle_id).delete()
@@ -164,19 +164,19 @@ class VehicleService:
 
     @staticmethod
     def get_dashboard_stats(user):
-        if user.role not in ('admin', 'fleet_manager'):
+        if not (user.is_admin or user.is_fleet_manager):
             raise PermissionDenied('Only admin and fleet_manager may view dashboard stats')
 
-        cache_key = DASHBOARD_STATS_CACHE_KEY if user.role == 'admin' else f'{DASHBOARD_STATS_CACHE_KEY}:{user.id}'
+        cache_key = DASHBOARD_STATS_CACHE_KEY if user.is_admin else f'{DASHBOARD_STATS_CACHE_KEY}:{user.id}'
         cached = cache.get(cache_key)
         if cached is not None:
             return cached
 
-        queryset = Vehicle.objects.all() if user.role == 'admin' else Vehicle.objects.filter(assigned_manager=user)
+        queryset = Vehicle.objects.all() if user.is_admin else Vehicle.objects.filter(assigned_manager=user)
 
         from alerts_module.models import Alert
         alerts_qs = Alert.objects.filter(acknowledged=False)
-        if user.role != 'admin':
+        if not user.is_admin:
             alerts_qs = alerts_qs.filter(vehicle__assigned_manager=user)
 
         by_status = {choice.value: 0 for choice in Vehicle.Status}
@@ -198,9 +198,9 @@ class DriverService:
     @staticmethod
     def list_drivers(user):
         queryset = Driver.objects.select_related('user')
-        if user.role == 'admin':
+        if user.is_admin:
             return queryset
-        if user.role == 'fleet_manager':
+        if user.is_fleet_manager:
             return queryset.filter(vehicles__assigned_manager=user).distinct()
         raise PermissionDenied('Drivers do not have access to the drivers list')
 
@@ -244,7 +244,7 @@ class DriverService:
 
     @staticmethod
     def delete_driver(actor, driver_id):
-        if actor.role != 'admin':
+        if not actor.is_admin:
             raise PermissionDenied('Only admin can delete driver profiles')
 
         deleted, _ = Driver.objects.filter(id=driver_id).delete()
