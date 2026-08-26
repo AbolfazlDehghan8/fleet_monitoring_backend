@@ -49,6 +49,30 @@ services:
       timeout: 5s
       retries: 5
 
+  pgbouncer:
+    image: edoburu/pgbouncer:1.21.0
+    container_name: fleet_pgbouncer
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: fleet_user
+      DB_PASSWORD: fleet_password
+      DB_NAME: fleet_db
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 500
+      DEFAULT_POOL_SIZE: 50
+      ADMIN_USERS: fleet_user
+    ports:
+      - "6432:6432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432", "-U", "fleet_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   web:
     build: .
     container_name: fleet_web
@@ -60,11 +84,12 @@ services:
     env_file:
       - .env
     environment:
-      DB_HOST: postgres
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
       REDIS_URL: redis://redis:6379/1
       RABBITMQ_URL: amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -86,11 +111,12 @@ services:
     env_file:
       - .env
     environment:
-      DB_HOST: postgres
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
       REDIS_URL: redis://redis:6379/1
       RABBITMQ_URL: amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
     depends_on:
-      postgres:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -106,11 +132,45 @@ services:
     env_file:
       - .env
     environment:
-      DB_HOST: postgres
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
       REDIS_URL: redis://redis:6379/1
       RABBITMQ_URL: amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
     depends_on:
-      postgres:
+      pgbouncer:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  celery_exporter:
+    build: .
+    container_name: fleet_celery_exporter
+    command: celery-prometheus-exporter --broker-url=amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
+    ports:
+      - "9808:9808"
+    env_file:
+      - .env
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  flower:
+    build: .
+    container_name: fleet_flower
+    command: celery -A fleet_monitoring flower --port=5555
+    ports:
+      - "5555:5555"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: pgbouncer
+      DB_PORT: 6432
+      REDIS_URL: redis://redis:6379/1
+      RABBITMQ_URL: amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
+    depends_on:
+      pgbouncer:
         condition: service_healthy
       redis:
         condition: service_healthy
