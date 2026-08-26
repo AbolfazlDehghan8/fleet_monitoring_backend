@@ -21,7 +21,12 @@ def publish_to_dead_letter(source_queue, task_name, payload, reason):
                 body,
                 exchange=kombu.Exchange('fleet.dlx', type='direct', durable=True),
                 routing_key='tasks.dead_letter',
-                declare=[kombu.Queue('tasks.dead_letter', durable=True)],
+                declare=[
+                    kombu.Queue(
+                        'tasks.dead_letter', durable=True,
+                        queue_arguments={'x-queue-type': 'quorum'},
+                    )
+                ],
                 retry=True,
             )
         logger.error(
