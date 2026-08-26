@@ -22,9 +22,9 @@ class ReportService:
 
     @staticmethod
     def _scoped_vehicles(user):
-        if user.role == 'admin':
+        if user.is_admin:
             return Vehicle.objects.all()
-        if user.role == 'fleet_manager':
+        if user.is_fleet_manager:
             return Vehicle.objects.filter(assigned_manager=user)
         return Vehicle.objects.none()
 
@@ -173,14 +173,14 @@ class ReportService:
         except Report.DoesNotExist:
             return None
 
-        if user.role != 'admin' and report.requested_by_id != user.id:
+        if not user.is_admin and report.requested_by_id != user.id:
             raise PermissionDenied('This report was not requested by you')
 
         return report
 
     @staticmethod
     def list_reports(user):
-        if user.role == 'admin':
+        if user.is_admin:
             return Report.objects.all()[:200]
         return Report.objects.filter(requested_by=user)[:200]
 
