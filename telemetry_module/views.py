@@ -8,6 +8,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from auth_module.permissions import IsAdminOrFleetManager, IsDriver
+from fleet_monitoring.tracing import trace_span
 
 from .serializers import TelemetryIngestSerializer, TelemetryLogSerializer
 from .services import QueueUnavailable, TelemetryService
@@ -36,31 +37,32 @@ class TelemetryIngestView(APIView):
         description='Validates a packet and publishes it to RabbitMQ for async processing',
     )
     def post(self, request):
-        if len(request.body) > MAX_PACKET_SIZE_BYTES:
-            return Response(
-                {'detail': f'Packet exceeds maximum size of {MAX_PACKET_SIZE_BYTES} bytes'},
-                status=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            )
+        with trace_span('api.telemetry_ingest'):
+            if len(request.body) > MAX_PACKET_SIZE_BYTES:
+                return Response(
+                    {'detail': f'Packet exceeds maximum size of {MAX_PACKET_SIZE_BYTES} bytes'},
+                    status=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                )
 
-        serializer = TelemetryIngestSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            serializer = TelemetryIngestSerializer(data=request.data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
 
-        try:
-            dispatch_id = TelemetryService.dispatch_packet(request.user, serializer.validated_data)
-        except ValidationError as exc:
-            detail = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
-            return Response(detail, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
-        except PermissionDenied as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
-        except QueueUnavailable:
-            return Response(
-                {'detail': 'Queue temporarily unavailable, please retry'},
-                status=status.HTTP_503_SERVICE_UNAVAILABLE,
-                headers={'Retry-After': '5'},
-            )
+            try:
+                dispatch_id = TelemetryService.dispatch_packet(request.user, serializer.validated_data)
+            except ValidationError as exc:
+                detail = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
+                return Response(detail, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            except PermissionDenied as exc:
+                return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+            except QueueUnavailable:
+                return Response(
+                    {'detail': 'Queue temporarily unavailable, please retry'},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    headers={'Retry-After': '5'},
+                )
 
-        return Response({'dispatch_id': dispatch_id}, status=status.HTTP_202_ACCEPTED)
+            return Response({'dispatch_id': dispatch_id}, status=status.HTTP_202_ACCEPTED)
 
     @extend_schema(
         responses={200: TelemetryLogSerializer(many=True)},
