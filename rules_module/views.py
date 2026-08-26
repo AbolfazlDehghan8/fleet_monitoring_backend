@@ -10,11 +10,7 @@ from auth_module.permissions import IsAdmin
 from .models import Rule
 from .serializers import RuleSerializer, RuleWriteSerializer
 from .services import RuleService
-
-
-def _validation_error_response(exc):
-    detail = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
-    return Response(detail, status=status.HTTP_400_BAD_REQUEST)
+from fleet_monitoring.error_utils import validation_error_response
 
 
 class RuleListCreateView(APIView):
@@ -46,7 +42,7 @@ class RuleListCreateView(APIView):
         try:
             rule = RuleService.create_rule(request.user, serializer.validated_data)
         except ValidationError as exc:
-            return _validation_error_response(exc)
+            return validation_error_response(exc)
 
         return Response(RuleSerializer(rule).data, status=status.HTTP_201_CREATED)
 
@@ -80,7 +76,7 @@ class RuleDetailView(APIView):
         try:
             rule = RuleService.update_rule(request.user, rule, serializer.validated_data)
         except ValidationError as exc:
-            return _validation_error_response(exc)
+            return validation_error_response(exc)
 
         return Response(RuleSerializer(rule).data, status=status.HTTP_200_OK)
 
