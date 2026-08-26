@@ -86,7 +86,7 @@ class VehicleDetailView(APIView):
     )
     def patch(self, request, vehicle_id):
         serializer_class = (
-            VehicleAdminUpdateSerializer if request.user.role == 'admin' else VehicleManagerUpdateSerializer
+            VehicleAdminUpdateSerializer if request.user.is_admin else VehicleManagerUpdateSerializer
         )
         serializer = serializer_class(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
