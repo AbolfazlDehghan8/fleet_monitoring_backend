@@ -7,6 +7,8 @@ from rest_framework.exceptions import PermissionDenied
 
 from vehicles_module.models import Vehicle
 
+from fleet_monitoring.tracing import trace_span
+
 from .models import TelemetryLog
 
 audit_logger = logging.getLogger('audit')
@@ -49,12 +51,13 @@ class TelemetryService:
         packet['timestamp'] = packet['timestamp'].isoformat()
         packet['correlation_id'] = get_correlation_id()
 
-        try:
-            result = process_telemetry_packet.apply_async(
-                args=[packet], queue='telemetry.raw.process',
-            )
-        except Exception as exc:
-            raise QueueUnavailable(str(exc))
+        with trace_span('queue.dispatch_telemetry', vehicle_id=validated_data['vehicle_id']):
+            try:
+                result = process_telemetry_packet.apply_async(
+                    args=[packet], queue='telemetry.raw.process',
+                )
+            except Exception as exc:
+                raise QueueUnavailable(str(exc))
 
         return result.id
 
@@ -77,8 +80,9 @@ class TelemetryService:
         )
 
         try:
-            with transaction.atomic():
-                log.save()
+            with trace_span('db.persist_telemetry', vehicle_id=vehicle.vehicle_id):
+                with transaction.atomic():
+                    log.save()
         except IntegrityError:
             audit_logger.info(
                 'telemetry_duplicate_ignored',
