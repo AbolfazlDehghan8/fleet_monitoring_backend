@@ -20,6 +20,8 @@ if not DEBUG and SECRET_KEY == _INSECURE_DEFAULT_SECRET_KEY:
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
 INSTALLED_APPS = [
+    'django_prometheus',
+
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -40,6 +42,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    'django_prometheus.middleware.PrometheusBeforeMiddleware',
     'fleet_monitoring.middleware.CorrelationIdMiddleware',
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
@@ -49,6 +52,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'django_prometheus.middleware.PrometheusAfterMiddleware',
 ]
 
 ROOT_URLCONF = 'fleet_monitoring.urls'
@@ -73,7 +77,7 @@ WSGI_APPLICATION = 'fleet_monitoring.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
+        'ENGINE': 'django_prometheus.db.backends.postgresql',
         'NAME': os.getenv('DB_NAME', 'fleet_db'),
         'USER': os.getenv('DB_USER', 'fleet_user'),
         'PASSWORD': os.getenv('DB_PASSWORD', 'fleet_password'),
@@ -117,6 +121,18 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000,http://127.0.0.1:3000').split(',')
+
+ENABLE_HTTPS_ENFORCEMENT = os.getenv('ENABLE_HTTPS_ENFORCEMENT', 'False') == 'True'
+
+if ENABLE_HTTPS_ENFORCEMENT:
+    SECURE_SSL_REDIRECT = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
 
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
@@ -204,12 +220,20 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_PREFETCH_MULTIPLIER = 1
 
+CELERY_WORKER_SEND_TASK_EVENTS = True
+CELERY_TASK_SEND_SENT_EVENT = True
+
 telemetry_exchange = Exchange('fleet.telemetry', type='direct', durable=True)
 dlx_exchange = Exchange('fleet.dlx', type='direct', durable=True)
 
 DEAD_LETTER_QUEUE_ARGUMENTS = {
     'x-dead-letter-exchange': 'fleet.dlx',
     'x-dead-letter-routing-key': 'tasks.dead_letter',
+    'x-queue-type': 'quorum',
+}
+
+DLQ_QUEUE_ARGUMENTS = {
+    'x-queue-type': 'quorum',
 }
 
 CELERY_TASK_QUEUES = (
@@ -225,7 +249,10 @@ CELERY_TASK_QUEUES = (
         'reports.generate', telemetry_exchange, routing_key='reports.generate',
         durable=True, queue_arguments=DEAD_LETTER_QUEUE_ARGUMENTS,
     ),
-    Queue('tasks.dead_letter', dlx_exchange, routing_key='tasks.dead_letter', durable=True),
+    Queue(
+        'tasks.dead_letter', dlx_exchange, routing_key='tasks.dead_letter',
+        durable=True, queue_arguments=DLQ_QUEUE_ARGUMENTS,
+    ),
 )
 CELERY_TASK_DEFAULT_QUEUE = 'telemetry.raw.process'
 CELERY_TASK_DEFAULT_EXCHANGE = 'fleet.telemetry'
@@ -246,6 +273,11 @@ CELERY_BEAT_SCHEDULE = {
     'telemetry-retention-cleanup': {
         'task': 'telemetry_module.tasks.cleanup_old_telemetry',
         'schedule': crontab(hour=2, minute=0),
+        'options': {'queue': 'telemetry.raw.process'},
+    },
+    'telemetry-ensure-future-partitions': {
+        'task': 'telemetry_module.tasks.ensure_future_telemetry_partitions',
+        'schedule': crontab(hour=1, minute=0, day_of_month=1),
         'options': {'queue': 'telemetry.raw.process'},
     },
     'daily-fleet-summary-report': {
