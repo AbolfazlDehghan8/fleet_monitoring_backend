@@ -21,11 +21,7 @@ from .serializers import (
     UserSerializer,
 )
 from .services import AuthService, UserService
-
-
-def _validation_error_response(exc):
-    detail = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
-    return Response(detail, status=status.HTTP_400_BAD_REQUEST)
+from fleet_monitoring.error_utils import validation_error_response
 
 
 class RegisterView(APIView):
@@ -50,7 +46,7 @@ class RegisterView(APIView):
         try:
             user = AuthService.register_user(serializer.validated_data)
         except ValidationError as exc:
-            return _validation_error_response(exc)
+            return validation_error_response(exc)
 
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
@@ -144,7 +140,7 @@ class ProfileView(APIView):
         try:
             user = UserService.update_user_profile(request.user, serializer.validated_data)
         except ValidationError as exc:
-            return _validation_error_response(exc)
+            return validation_error_response(exc)
 
         return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
 
@@ -201,7 +197,7 @@ class AdminUserListView(APIView):
         try:
             user = AuthService.admin_create_user(request.user, serializer.validated_data)
         except ValidationError as exc:
-            return _validation_error_response(exc)
+            return validation_error_response(exc)
 
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
