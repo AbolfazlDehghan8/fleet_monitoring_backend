@@ -8,6 +8,7 @@ from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from auth_module.permissions import IsAdminOrFleetManager, IsDriver
+from fleet_monitoring.error_utils import validation_error_response
 from fleet_monitoring.tracing import trace_span
 
 from .serializers import TelemetryIngestSerializer, TelemetryLogSerializer
@@ -51,8 +52,7 @@ class TelemetryIngestView(APIView):
             try:
                 dispatch_id = TelemetryService.dispatch_packet(request.user, serializer.validated_data)
             except ValidationError as exc:
-                detail = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
-                return Response(detail, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+                return validation_error_response(exc, status_code=status.HTTP_422_UNPROCESSABLE_ENTITY)
             except PermissionDenied as exc:
                 return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
             except QueueUnavailable:
