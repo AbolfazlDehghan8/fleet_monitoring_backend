@@ -39,13 +39,13 @@ class AlertService:
 
     @staticmethod
     def _check_scope(actor, alert):
-        if actor.role == 'admin':
+        if actor.is_admin:
             return
-        if actor.role == 'fleet_manager':
+        if actor.is_fleet_manager:
             if alert.vehicle.assigned_manager_id != actor.id:
                 raise PermissionDenied('This alert is not on a vehicle assigned to you')
             return
-        if actor.role == 'driver':
+        if actor.is_driver:
             driver_profile = getattr(actor, 'driver_profile', None)
             if driver_profile is None or alert.vehicle.driver_id != driver_profile.id:
                 raise PermissionDenied('This alert is not on your vehicle')
@@ -54,9 +54,9 @@ class AlertService:
 
     @staticmethod
     def list_alerts(user):
-        if user.role == 'admin':
+        if user.is_admin:
             queryset = Alert.objects.all()
-        elif user.role == 'fleet_manager':
+        elif user.is_fleet_manager:
             queryset = Alert.objects.filter(vehicle__assigned_manager=user)
         else:
             queryset = Alert.objects.none()
