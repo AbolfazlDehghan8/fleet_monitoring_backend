@@ -43,7 +43,7 @@ class Driver(models.Model):
         return f"{self.user.get_full_name() or self.user.username} ({self.license_number})"
 
     def clean(self):
-        if self.user_id and self.user.role != 'driver':
+        if self.user_id and not self.user.is_driver:
             raise ValidationError({'user': 'Linked user must have the driver role'})
 
 
@@ -99,7 +99,7 @@ class Vehicle(models.Model):
         return f"{self.vehicle_id} ({self.license_plate})"
 
     def clean(self):
-        if self.assigned_manager_id and self.assigned_manager.role != 'fleet_manager':
+        if self.assigned_manager_id and not self.assigned_manager.is_fleet_manager:
             raise ValidationError({'assigned_manager': 'Assigned manager must have the fleet_manager role'})
 
 
