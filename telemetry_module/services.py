@@ -22,13 +22,13 @@ class TelemetryService:
 
     @staticmethod
     def _check_scope(actor, vehicle):
-        if actor.role == 'admin':
+        if actor.is_admin:
             return
-        if actor.role == 'fleet_manager':
+        if actor.is_fleet_manager:
             if vehicle.assigned_manager_id != actor.id:
                 raise PermissionDenied('This vehicle is not assigned to you')
             return
-        if actor.role == 'driver':
+        if actor.is_driver:
             driver_profile = getattr(actor, 'driver_profile', None)
             if driver_profile is None or vehicle.driver_id != driver_profile.id:
                 raise PermissionDenied('This vehicle is not assigned to you')
@@ -117,9 +117,9 @@ class TelemetryService:
 
     @staticmethod
     def list_telemetry(user, vehicle_id=None):
-        if user.role == 'admin':
+        if user.is_admin:
             queryset = TelemetryLog.objects.all()
-        elif user.role == 'fleet_manager':
+        elif user.is_fleet_manager:
             queryset = TelemetryLog.objects.filter(vehicle__assigned_manager=user)
         else:
             queryset = TelemetryLog.objects.none()
