@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from fleet_monitoring.dead_letter import publish_to_dead_letter
 from fleet_monitoring.middleware import reset_correlation_id, set_correlation_id
+from fleet_monitoring.tracing import trace_span
 
 from .services import TelemetryService
 
@@ -29,7 +30,8 @@ def process_telemetry_packet(self, packet_data):
     token = set_correlation_id(correlation_id)
 
     try:
-        TelemetryService.persist_packet(packet_data)
+        with trace_span('worker.process_telemetry_packet', vehicle_id=packet_data.get('vehicle_id')):
+            TelemetryService.persist_packet(packet_data)
     except DatabaseError as exc:
         try:
             raise self.retry(exc=exc)
@@ -43,6 +45,43 @@ def process_telemetry_packet(self, packet_data):
             raise
     finally:
         reset_correlation_id(token)
+
+
+@shared_task(queue='telemetry.raw.process')
+def ensure_future_telemetry_partitions(months_ahead=3):
+    from datetime import date
+
+    from django.db import connection
+
+    today = date.today()
+    year, month = today.year, today.month
+    created = []
+
+    with connection.cursor() as cursor:
+        for _ in range(months_ahead):
+            next_month = month + 1
+            next_year = year
+            if next_month > 12:
+                next_month = 1
+                next_year += 1
+
+            partition_name = f"telemetry_logs_{year:04d}_{month:02d}"
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {partition_name}
+                PARTITION OF telemetry_logs
+                FOR VALUES FROM (%s) TO (%s);
+                """,
+                [f"{year:04d}-{month:02d}-01", f"{next_year:04d}-{next_month:02d}-01"],
+            )
+            created.append(partition_name)
+            year, month = next_year, next_month
+
+    logger.info(
+        'telemetry_partitions_ensured',
+        extra={'actor': 'scheduler', 'action': 'ensure_future_telemetry_partitions', 'target': ','.join(created)},
+    )
+    return created
 
 
 @shared_task(queue='telemetry.raw.process')
