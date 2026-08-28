@@ -8,6 +8,7 @@ from django.utils import timezone as django_timezone
 from .models import OBU, Driver, Vehicle
 
 audit_logger = logging.getLogger('audit')
+degradation_logger = logging.getLogger('fleet_monitoring.cache_degradation')
 
 VEHICLE_STATUS_CACHE_KEY = 'fleet:vehicle:{id}:status'
 VEHICLE_STATUS_CACHE_TTL_SECONDS = 60
@@ -20,6 +21,40 @@ DASHBOARD_STATS_CACHE_TTL_SECONDS = 30
 
 def _not_found(detail='Vehicle not found'):
     raise ValidationError({'detail': detail})
+
+
+def _safe_cache_get(key, action):
+    try:
+        return cache.get(key)
+    except Exception:
+        degradation_logger.warning(
+            'cache_read_failed',
+            extra={'actor': 'api', 'action': action, 'target': key},
+            exc_info=True,
+        )
+        return None
+
+
+def _safe_cache_set(key, value, timeout, action):
+    try:
+        cache.set(key, value, timeout=timeout)
+    except Exception:
+        degradation_logger.warning(
+            'cache_write_failed',
+            extra={'actor': 'api', 'action': action, 'target': key},
+            exc_info=True,
+        )
+
+
+def _safe_cache_delete(key, action):
+    try:
+        cache.delete(key)
+    except Exception:
+        degradation_logger.warning(
+            'cache_delete_failed',
+            extra={'actor': 'api', 'action': action, 'target': key},
+            exc_info=True,
+        )
 
 
 class VehicleService:
@@ -141,7 +176,7 @@ class VehicleService:
     def get_vehicle_status(user, vehicle_id):
         vehicle = VehicleService.get_vehicle_for_user(user, vehicle_id)
         cache_key = VEHICLE_STATUS_CACHE_KEY.format(id=vehicle.id)
-        cached = cache.get(cache_key)
+        cached = _safe_cache_get(cache_key, 'get_vehicle_status')
         if cached is None:
             cached = {
                 'vehicle_id': vehicle.id,
@@ -149,18 +184,20 @@ class VehicleService:
                 'status': vehicle.status,
                 'updated_at': vehicle.updated_at.isoformat(),
             }
-            cache.set(cache_key, cached, timeout=VEHICLE_STATUS_CACHE_TTL_SECONDS)
+            _safe_cache_set(cache_key, cached, VEHICLE_STATUS_CACHE_TTL_SECONDS, 'get_vehicle_status')
 
         payload = dict(cached)
-        live_telemetry = cache.get(VEHICLE_TELEMETRY_CACHE_KEY.format(id=vehicle.id))
+        live_telemetry = _safe_cache_get(
+            VEHICLE_TELEMETRY_CACHE_KEY.format(id=vehicle.id), 'get_vehicle_status_live_telemetry'
+        )
         if live_telemetry:
             payload['live_telemetry'] = live_telemetry
         return payload
 
     @staticmethod
     def _invalidate_status_cache(vehicle_id):
-        cache.delete(VEHICLE_STATUS_CACHE_KEY.format(id=vehicle_id))
-        cache.delete(DASHBOARD_STATS_CACHE_KEY)
+        _safe_cache_delete(VEHICLE_STATUS_CACHE_KEY.format(id=vehicle_id), 'invalidate_status_cache')
+        _safe_cache_delete(DASHBOARD_STATS_CACHE_KEY, 'invalidate_status_cache')
 
     @staticmethod
     def get_dashboard_stats(user):
@@ -168,7 +205,7 @@ class VehicleService:
             raise PermissionDenied('Only admin and fleet_manager may view dashboard stats')
 
         cache_key = DASHBOARD_STATS_CACHE_KEY if user.is_admin else f'{DASHBOARD_STATS_CACHE_KEY}:{user.id}'
-        cached = cache.get(cache_key)
+        cached = _safe_cache_get(cache_key, 'get_dashboard_stats')
         if cached is not None:
             return cached
 
@@ -189,7 +226,7 @@ class VehicleService:
             'unacknowledged_alerts': alerts_qs.count(),
             'generated_at': django_timezone.now().isoformat(),
         }
-        cache.set(cache_key, payload, timeout=DASHBOARD_STATS_CACHE_TTL_SECONDS)
+        _safe_cache_set(cache_key, payload, DASHBOARD_STATS_CACHE_TTL_SECONDS, 'get_dashboard_stats')
         return payload
 
 
