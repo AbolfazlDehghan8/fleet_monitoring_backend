@@ -197,6 +197,11 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        'fleet_monitoring.cache_degradation': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
     },
 }
 
@@ -206,9 +211,16 @@ CACHES = {
         'LOCATION': os.getenv('REDIS_URL', 'redis://localhost:6379/1'),
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'IGNORE_EXCEPTIONS': True,
+            'SOCKET_CONNECT_TIMEOUT': 2,
+            'SOCKET_TIMEOUT': 2,
         }
     }
 }
+
+DJANGO_REDIS_IGNORE_EXCEPTIONS = True
+DJANGO_REDIS_LOG_IGNORED_EXCEPTIONS = True
+DJANGO_REDIS_LOGGER = 'fleet_monitoring.cache_degradation'
 
 from kombu import Exchange, Queue
 
