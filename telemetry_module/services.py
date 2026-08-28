@@ -12,6 +12,7 @@ from fleet_monitoring.tracing import trace_span
 from .models import TelemetryLog
 
 audit_logger = logging.getLogger('audit')
+degradation_logger = logging.getLogger('fleet_monitoring.cache_degradation')
 
 
 class QueueUnavailable(Exception):
@@ -90,22 +91,29 @@ class TelemetryService:
             )
             return
 
-        cache.set(
-            f'fleet:vehicle:{vehicle.id}:telemetry',
-            {
-                'vehicle_id': vehicle.vehicle_id,
-                'status': vehicle.status,
-                'speed': packet_data['speed'],
-                'engine_temperature': packet_data['engine_temperature'],
-                'battery_voltage': packet_data['battery_voltage'],
-                'fuel_level': packet_data['fuel_level'],
-                'latitude': packet_data['latitude'],
-                'longitude': packet_data['longitude'],
-                'odometer': packet_data['odometer'],
-                'last_seen': packet_data['timestamp'],
-            },
-            timeout=None,
-        )
+        try:
+            cache.set(
+                f'fleet:vehicle:{vehicle.id}:telemetry',
+                {
+                    'vehicle_id': vehicle.vehicle_id,
+                    'status': vehicle.status,
+                    'speed': packet_data['speed'],
+                    'engine_temperature': packet_data['engine_temperature'],
+                    'battery_voltage': packet_data['battery_voltage'],
+                    'fuel_level': packet_data['fuel_level'],
+                    'latitude': packet_data['latitude'],
+                    'longitude': packet_data['longitude'],
+                    'odometer': packet_data['odometer'],
+                    'last_seen': packet_data['timestamp'],
+                },
+                timeout=None,
+            )
+        except Exception:
+            degradation_logger.warning(
+                'telemetry_cache_update_failed',
+                extra={'actor': 'worker', 'action': 'cache_set_telemetry', 'target': vehicle.vehicle_id},
+                exc_info=True,
+            )
 
         audit_logger.info(
             'telemetry_ingested',
