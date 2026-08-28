@@ -9,11 +9,27 @@ _STANDARD_LOGRECORD_ATTRS = frozenset(logging.LogRecord(
 ).__dict__.keys()) | {'correlation_id', 'message'}
 
 
+def _current_trace_context():
+    try:
+        from opentelemetry import trace
+        span_context = trace.get_current_span().get_span_context()
+        if span_context is not None and span_context.is_valid:
+            return format(span_context.trace_id, '032x'), format(span_context.span_id, '016x')
+    except Exception:
+        pass
+    return None, None
+
+
 class CorrelationIdFilter(logging.Filter):
 
     def filter(self, record):
         if not getattr(record, 'correlation_id', None):
             record.correlation_id = get_correlation_id()
+
+        trace_id, span_id = _current_trace_context()
+        if trace_id:
+            record.trace_id = trace_id
+            record.span_id = span_id
         return True
 
 
