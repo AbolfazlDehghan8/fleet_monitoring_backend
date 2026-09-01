@@ -1,0 +1,156 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 25% 97%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 210 40% 98%;
+
+    --secondary: 220 20% 94%;
+    --secondary-foreground: 222 47% 11%;
+
+    --muted: 220 20% 94%;
+    --muted-foreground: 220 9% 46%;
+
+    --accent: 217 91% 96%;
+    --accent-foreground: 217 91% 40%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 152 69% 31%;
+    --success-foreground: 210 40% 98%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 26 83% 14%;
+
+    --border: 220 18% 88%;
+    --input: 220 18% 88%;
+    --ring: 217 91% 60%;
+
+    --sidebar: 220 20% 96%;
+    --sidebar-foreground: 222 47% 15%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 40% 10%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 40% 10%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 217 91% 65%;
+    --primary-foreground: 222 47% 7%;
+
+    --secondary: 222 30% 15%;
+    --secondary-foreground: 210 40% 96%;
+
+    --muted: 222 30% 15%;
+    --muted-foreground: 217 15% 65%;
+
+    --accent: 217 60% 18%;
+    --accent-foreground: 213 94% 78%;
+
+    --destructive: 0 63% 50%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 152 55% 42%;
+    --success-foreground: 210 40% 98%;
+
+    --warning: 38 92% 55%;
+    --warning-foreground: 26 83% 10%;
+
+    --border: 222 25% 18%;
+    --input: 222 25% 18%;
+    --ring: 217 91% 65%;
+
+    --sidebar: 224 45% 6%;
+    --sidebar-foreground: 210 30% 85%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html {
+    color-scheme: light;
+    -webkit-font-smoothing: antialiased;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings:
+      'cv02',
+      'cv03',
+      'cv04',
+      'cv11';
+  }
+  ::selection {
+    @apply bg-primary/20;
+  }
+}
+
+@layer utilities {
+  .glass {
+    @apply border border-white/10 bg-card/70 backdrop-blur-xl;
+  }
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-border;
+  }
+  .num-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* Bilingual (EN/FA) support -------------------------------------------- */
+
+html.font-fa,
+html.font-fa body {
+  font-family: 'Vazirmatn', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Numbers, dates and telemetry readings stay LTR even inside RTL text so
+   they read naturally regardless of the active language. */
+[dir='rtl'] .num-tabular,
+[dir='rtl'] time,
+[dir='rtl'] .ltr-numeric {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* Chart/icon-only controls should not mirror in RTL. */
+[dir='rtl'] .no-mirror {
+  direction: ltr;
+}
+
+/* Directional "back/forward" icons (ArrowLeft/ArrowRight/ChevronLeft/ChevronRight
+   from lucide-react) should point the correct way when the UI is mirrored for
+   Persian, without having to special-case every usage across the app. */
+[dir='rtl'] .lucide-arrow-left,
+[dir='rtl'] .lucide-arrow-right,
+[dir='rtl'] .lucide-chevron-left,
+[dir='rtl'] .lucide-chevron-right {
+  transform: scaleX(-1);
+}

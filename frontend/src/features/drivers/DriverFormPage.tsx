@@ -1,0 +1,260 @@
+import { zodResolver } from '@hookform/resolvers/zod';
+import { ArrowLeft, Loader2, Save } from 'lucide-react';
+import * as React from 'react';
+import { Controller, useForm } from 'react-hook-form';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { z } from 'zod';
+
+import { useLanguage } from '@/app/LanguageContext';
+import { adminUsersApi } from '@/api/admin';
+import { ErrorState } from '@/components/shared/ErrorState';
+import { PageHeader } from '@/components/shared/PageHeader';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { toast } from '@/components/ui/use-toast';
+import { ROLES } from '@/constants/roles';
+import { useAuth } from '@/features/auth/AuthContext';
+import { useCreateDriver, useDriver, useUpdateDriver } from '@/features/vehicles/hooks';
+import type { TranslationKey } from '@/i18n/translations';
+import { ApiError } from '@/types/common';
+
+function useSchemas(t: (key: TranslationKey) => string) {
+  const createSchema = z.object({
+    user: z.string().min(1, t('driverForm.userRequired')),
+    license_number: z.string().min(1, t('driverForm.licenseRequired')).max(50),
+    phone_number: z.string().max(20).optional().or(z.literal('')),
+  });
+
+  const editSchema = z.object({
+    license_number: z.string().min(1, t('driverForm.licenseRequired')).max(50),
+    phone_number: z.string().max(20).optional().or(z.literal('')),
+    is_active: z.boolean(),
+  });
+
+  return { createSchema, editSchema };
+}
+
+type CreateValues = { user: string; license_number: string; phone_number?: string };
+type EditValues = { license_number: string; phone_number?: string; is_active: boolean };
+
+export function DriverFormPage() {
+  const { t } = useLanguage();
+  const params = useParams<{ id: string }>();
+  const isEditing = Boolean(params.id);
+  const driverId = params.id ? Number(params.id) : undefined;
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const isAdmin = user?.role === ROLES.ADMIN;
+
+  const driverQuery = useDriver(driverId);
+  const createMutation = useCreateDriver();
+  const updateMutation = useUpdateDriver(driverId ?? -1);
+  const { createSchema, editSchema } = useSchemas(t);
+
+  // Admin can pick from unlinked driver-role users; the backend has no endpoint
+  // for a Fleet Manager to browse users, so they enter the numeric user id
+  // directly (visible on the Admin > Users page).
+  const [driverUsers, setDriverUsers] = React.useState<{ id: number; label: string }[]>([]);
+  React.useEffect(() => {
+    if (isEditing || !isAdmin) return;
+    let cancelled = false;
+    adminUsersApi
+      .list({ role: ROLES.DRIVER })
+      .then((users) => {
+        if (!cancelled) setDriverUsers(users.map((u) => ({ id: u.id, label: `${u.username} (${u.email})` })));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditing, isAdmin]);
+
+  const createForm = useForm<CreateValues>({
+    resolver: zodResolver(createSchema),
+    defaultValues: { user: '', license_number: '', phone_number: '' },
+  });
+
+  const editForm = useForm<EditValues>({
+    resolver: zodResolver(editSchema),
+    values: driverQuery.data
+      ? {
+          license_number: driverQuery.data.license_number,
+          phone_number: driverQuery.data.phone_number ?? '',
+          is_active: driverQuery.data.is_active,
+        }
+      : undefined,
+    defaultValues: { license_number: '', phone_number: '', is_active: true },
+  });
+
+  if (isEditing && driverQuery.isLoading) {
+    return <p className="text-sm text-muted-foreground">{t('driverForm.loadingDriver')}</p>;
+  }
+  if (isEditing && driverQuery.isError) {
+    return <ErrorState onRetry={() => void driverQuery.refetch()} title={t('driverForm.unableToLoad')} />;
+  }
+
+  async function onCreate(values: CreateValues) {
+    try {
+      await createMutation.mutateAsync({
+        user: Number(values.user),
+        license_number: values.license_number,
+        phone_number: values.phone_number || undefined,
+      });
+      toast({ title: t('driverForm.profileCreated'), variant: 'success' });
+      navigate('/drivers');
+    } catch (error) {
+      toast({
+        title: t('driverForm.couldNotCreate'),
+        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        variant: 'destructive',
+      });
+    }
+  }
+
+  async function onUpdate(values: EditValues) {
+    try {
+      await updateMutation.mutateAsync(values);
+      toast({ title: t('driverForm.profileUpdated'), variant: 'success' });
+      navigate('/drivers');
+    } catch (error) {
+      toast({
+        title: t('driverForm.couldNotUpdate'),
+        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        variant: 'destructive',
+      });
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <Button asChild variant="ghost" size="sm" className="mb-2 -ms-2 text-muted-foreground">
+          <Link to="/drivers">
+            <ArrowLeft className="size-3.5" />
+            {t('driverForm.backToDrivers')}
+          </Link>
+        </Button>
+        <PageHeader
+          title={isEditing ? t('driverForm.editProfile') : t('driverForm.newProfile')}
+          description={isEditing ? t('driverForm.descEdit') : t('driverForm.descCreate')}
+        />
+      </div>
+
+      <Card className="max-w-xl">
+        <CardContent className="pt-5">
+          {isEditing ? (
+            <form onSubmit={editForm.handleSubmit(onUpdate)} className="space-y-5" noValidate>
+              <div className="space-y-1.5">
+                <Label htmlFor="license_number">{t('driverForm.licenseNumber')}</Label>
+                <Input id="license_number" placeholder="DL-001" {...editForm.register('license_number')} />
+                {editForm.formState.errors.license_number && (
+                  <p className="text-xs text-destructive">{editForm.formState.errors.license_number.message}</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="phone_number">{t('driverForm.phoneNumber')}</Label>
+                <Input id="phone_number" placeholder="+1 555 0100" {...editForm.register('phone_number')} />
+              </div>
+              <div className="flex items-center justify-between rounded-md border border-input px-3 py-2">
+                <Label htmlFor="is_active" className="cursor-pointer">
+                  {t('driverForm.driverActive')}
+                </Label>
+                <Controller
+                  control={editForm.control}
+                  name="is_active"
+                  render={({ field }) => (
+                    <Switch id="is_active" checked={field.value} onCheckedChange={field.onChange} />
+                  )}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => navigate('/drivers')}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" disabled={editForm.formState.isSubmitting}>
+                  {editForm.formState.isSubmitting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Save className="size-4" />
+                  )}
+                  {t('adminForm.saveChanges')}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={createForm.handleSubmit(onCreate)} className="space-y-5" noValidate>
+              <div className="space-y-1.5">
+                <Label>{t('driverForm.linkedUser')}</Label>
+                {isAdmin ? (
+                  <Controller
+                    control={createForm.control}
+                    name="user"
+                    render={({ field }) => (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t('driverForm.selectDriverUser')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {driverUsers.map((u) => (
+                            <SelectItem key={u.id} value={String(u.id)}>
+                              {u.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                ) : (
+                  <>
+                    <Input
+                      type="number"
+                      placeholder={t('driverForm.numericUserId')}
+                      {...createForm.register('user')}
+                    />
+                    <p className="text-xs text-muted-foreground">{t('driverForm.askAdminForId')}</p>
+                  </>
+                )}
+                {createForm.formState.errors.user && (
+                  <p className="text-xs text-destructive">{createForm.formState.errors.user.message}</p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="license_number">{t('driverForm.licenseNumber')}</Label>
+                <Input id="license_number" placeholder="DL-001" {...createForm.register('license_number')} />
+                {createForm.formState.errors.license_number && (
+                  <p className="text-xs text-destructive">
+                    {createForm.formState.errors.license_number.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="phone_number">{t('driverForm.phoneNumber')}</Label>
+                <Input id="phone_number" placeholder="+1 555 0100" {...createForm.register('phone_number')} />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="outline" onClick={() => navigate('/drivers')}>
+                  {t('common.cancel')}
+                </Button>
+                <Button type="submit" disabled={createForm.formState.isSubmitting}>
+                  {createForm.formState.isSubmitting ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <Save className="size-4" />
+                  )}
+                  {t('driverForm.createProfile')}
+                </Button>
+              </div>
+            </form>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
