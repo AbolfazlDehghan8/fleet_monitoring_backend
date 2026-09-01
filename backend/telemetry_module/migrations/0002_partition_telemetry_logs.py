@@ -59,14 +59,11 @@ CREATE TABLE telemetry_logs (
     PRIMARY KEY (id, "timestamp")
 ) PARTITION BY RANGE ("timestamp");
 
+CREATE SEQUENCE telemetry_logs_id_seq_new;
 ALTER TABLE telemetry_logs
-    ALTER COLUMN id SET DEFAULT nextval('telemetry_logs_id_seq'::regclass);
-ALTER SEQUENCE telemetry_logs_id_seq OWNED BY telemetry_logs.id;
-
-CREATE INDEX telemetry_l_vehicle_5a51ed_idx ON telemetry_logs (vehicle_id, "timestamp" DESC);
-CREATE INDEX telemetry_l_timesta_f01c13_idx ON telemetry_logs ("timestamp");
-ALTER TABLE telemetry_logs
-    ADD CONSTRAINT uniq_telemetry_vehicle_timestamp UNIQUE (vehicle_id, "timestamp");
+    ALTER COLUMN id SET DEFAULT nextval('telemetry_logs_id_seq_new'::regclass);
+ALTER SEQUENCE telemetry_logs_id_seq_new OWNED BY telemetry_logs.id;
+SELECT setval('telemetry_logs_id_seq_new', COALESCE((SELECT MAX(id) FROM telemetry_logs_legacy), 1));
 
 {_partition_ddl()}
 CREATE TABLE IF NOT EXISTS telemetry_logs_default PARTITION OF telemetry_logs DEFAULT;
@@ -77,6 +74,13 @@ SELECT id, obu_serial, "timestamp", speed, engine_temperature, battery_voltage,
 FROM telemetry_logs_legacy;
 
 DROP TABLE telemetry_logs_legacy;
+
+ALTER SEQUENCE telemetry_logs_id_seq_new RENAME TO telemetry_logs_id_seq;
+
+CREATE INDEX telemetry_l_vehicle_5a51ed_idx ON telemetry_logs (vehicle_id, "timestamp" DESC);
+CREATE INDEX telemetry_l_timesta_f01c13_idx ON telemetry_logs ("timestamp");
+ALTER TABLE telemetry_logs
+    ADD CONSTRAINT uniq_telemetry_vehicle_timestamp UNIQUE (vehicle_id, "timestamp");
 """
 
 REVERSE_SQL = """
