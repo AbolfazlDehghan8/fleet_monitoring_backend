@@ -1,0 +1,37 @@
+<component name="InspectionProjectProfileManager">
+  <profile version="1.0">
+    <option name="myName" value="Project Default" />
+    <inspection_tool class="Eslint" enabled="true" level="WARNING" enabled_by_default="true" />
+    <inspection_tool class="PyPackageRequirementsInspection" enabled="true" level="WARNING" enabled_by_default="true">
+      <option name="ignoredPackages">
+        <list>
+          <option value="openai" />
+          <option value="persian" />
+          <option value="persian-jalali-calendar" />
+          <option value="psycopg" />
+          <option value="psycopg2-binary" />
+          <option value="PyPDF2" />
+          <option value="python-decouple" />
+          <option value="python-docx" />
+          <option value="python-dotenv" />
+          <option value="regex" />
+          <option value="ruff" />
+          <option value="safetensors" />
+          <option value="scikit-learn" />
+          <option value="scipy" />
+          <option value="sentence-transformers" />
+          <option value="serializers" />
+          <option value="sniffio" />
+          <option value="sorl-thumbnail" />
+          <option value="sympy" />
+          <option value="threadpoolctl" />
+          <option value="thumbnail" />
+          <option value="tokenizers" />
+          <option value="transformers" />
+          <option value="typer-slim" />
+          <option value="websockets" />
+        </list>
+      </option>
+    </inspection_tool>
+  </profile>
+</component>
