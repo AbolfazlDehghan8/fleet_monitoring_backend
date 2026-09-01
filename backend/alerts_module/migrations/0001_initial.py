@@ -11,7 +11,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("rules_module", "0001_initial"),
-        ("telemetry_module", "0001_initial"),
+        ("telemetry_module", "0002_partition_telemetry_logs"),
         ("vehicles_module", "0001_initial"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
@@ -70,6 +70,7 @@ class Migration(migrations.Migration):
                 (
                     "telemetry_log",
                     models.ForeignKey(
+                        db_constraint=False,
                         null=True,
                         on_delete=django.db.models.deletion.SET_NULL,
                         related_name="alerts",
