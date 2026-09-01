@@ -9,6 +9,7 @@ class Alert(models.Model):
     rule = models.ForeignKey('rules_module.Rule', on_delete=models.SET_NULL, null=True, related_name='alerts')
     telemetry_log = models.ForeignKey(
         'telemetry_module.TelemetryLog', on_delete=models.SET_NULL, null=True, related_name='alerts',
+        db_constraint=False,
     )
 
     rule_name = models.CharField(max_length=100)
