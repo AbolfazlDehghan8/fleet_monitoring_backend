@@ -244,11 +244,11 @@ dlx_exchange = Exchange('fleet.dlx', type='direct', durable=True)
 DEAD_LETTER_QUEUE_ARGUMENTS = {
     'x-dead-letter-exchange': 'fleet.dlx',
     'x-dead-letter-routing-key': 'tasks.dead_letter',
-    'x-queue-type': 'quorum',
+    'x-queue-type': 'classic',
 }
 
 DLQ_QUEUE_ARGUMENTS = {
-    'x-queue-type': 'quorum',
+    'x-queue-type': 'classic',
 }
 
 CELERY_TASK_QUEUES = (
