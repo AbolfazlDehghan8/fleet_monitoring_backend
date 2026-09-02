@@ -24,7 +24,7 @@ def publish_to_dead_letter(source_queue, task_name, payload, reason):
                 declare=[
                     kombu.Queue(
                         'tasks.dead_letter', durable=True,
-                        queue_arguments={'x-queue-type': 'quorum'},
+                        queue_arguments={'x-queue-type': 'classic'},
                     )
                 ],
                 retry=True,
