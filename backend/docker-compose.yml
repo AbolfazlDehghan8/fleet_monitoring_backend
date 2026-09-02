@@ -63,7 +63,7 @@ services:
       retries: 5
 
   pgbouncer:
-    image: edoburu/pgbouncer:1.21.0
+    image: edoburu/pgbouncer:1.21.0-p0
     container_name: fleet_pgbouncer
     environment:
       DB_HOST: postgres
@@ -75,6 +75,8 @@ services:
       MAX_CLIENT_CONN: 500
       DEFAULT_POOL_SIZE: 50
       ADMIN_USERS: fleet_user
+      LISTEN_PORT: 6432
+      AUTH_TYPE: scram-sha-256
     ports:
       - "6432:6432"
     depends_on:
@@ -131,6 +133,7 @@ services:
       DB_HOST: pgbouncer
       DB_PORT: 6432
       REDIS_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND_URL: redis://redis:6379/2
       RABBITMQ_URL: amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
       OTEL_SERVICE_NAME: fleet-monitoring-worker
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
@@ -156,6 +159,7 @@ services:
       DB_HOST: pgbouncer
       DB_PORT: 6432
       REDIS_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND_URL: redis://redis:6379/2
       RABBITMQ_URL: amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
       OTEL_SERVICE_NAME: fleet-monitoring-beat
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
@@ -172,7 +176,7 @@ services:
   celery_exporter:
     build: .
     container_name: fleet_celery_exporter
-    command: celery-prometheus-exporter --broker-url=amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
+    command: celery-prometheus-exporter --broker=amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
     ports:
       - "9808:9808"
     env_file:
