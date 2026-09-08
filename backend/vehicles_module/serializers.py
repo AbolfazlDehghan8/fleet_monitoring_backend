@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from auth_module.models import User
 
-from .models import OBU, Driver, Vehicle
+from .models import OBU, Company, Driver, Vehicle
 
 
 class OBUSerializer(serializers.ModelSerializer):
@@ -102,3 +102,20 @@ class VehicleManagerUpdateSerializer(serializers.Serializer):
     driver = serializers.PrimaryKeyRelatedField(queryset=Driver.objects.all(), required=False, allow_null=True)
     obu_serial_number = serializers.CharField(max_length=50, required=False)
     obu_firmware_version = serializers.CharField(max_length=20, required=False, allow_blank=True)
+
+class CompanySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Company
+        fields = [
+            'id', 'name', 'registration_number', 'address',
+            'contact_email', 'contact_phone', 'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
+
+
+class CompanyUpdateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=150, required=False)
+    registration_number = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    address = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    contact_email = serializers.EmailField(required=False, allow_blank=True)
+    contact_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
