@@ -8,6 +8,14 @@ class CompanyAdmin(admin.ModelAdmin):
     list_display = ('name', 'registration_number', 'contact_email', 'contact_phone', 'created_at')
     search_fields = ('name', 'registration_number', 'contact_email')
 
+    def has_add_permission(self, request):
+        if Company.objects.exists():
+            return False
+        return super().has_add_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
 
 @admin.register(Vehicle)
 class VehicleAdmin(admin.ModelAdmin):
