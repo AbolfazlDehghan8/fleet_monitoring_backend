@@ -58,7 +58,7 @@ class Vehicle(models.Model):
     vehicle_id = models.CharField(max_length=50, unique=True, db_index=True)
 
     company = models.ForeignKey(
-        Company, on_delete=models.PROTECT, null=True, blank=True, related_name='vehicles',
+        Company, on_delete=models.PROTECT, related_name='vehicles',
     )
 
     license_plate = models.CharField(max_length=20, unique=True)
