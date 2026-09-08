@@ -331,3 +331,72 @@ class DashboardStatsTests(VehicleTestBase):
 
         refreshed = self.client.get(reverse('vehicle-dashboard-stats'))
         self.assertEqual(refreshed.data['total_vehicles'], 3)
+
+class CompanyViewTests(VehicleTestBase):
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('company-detail')
+
+    def test_admin_can_retrieve_company(self):
+        # Relies on the 0003_seed_company data migration having created the
+        # singleton 'Default Company' row in the test database.
+        self._login_as('admin01')
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('name', response.data)
+
+    def test_fleet_manager_cannot_retrieve_company(self):
+        self._login_as('fm01')
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_driver_cannot_retrieve_company(self):
+        self._login_as('drv01')
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unauthenticated_cannot_retrieve_company(self):
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_admin_can_update_company(self):
+        self._login_as('admin01')
+        response = self.client.patch(self.url, {'contact_email': 'newops@example.com'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['contact_email'], 'newops@example.com')
+
+    def test_partial_update_does_not_touch_other_fields(self):
+        from .models import Company
+
+        original_name = Company.objects.first().name
+        self._login_as('admin01')
+        response = self.client.patch(self.url, {'contact_phone': '+1-555-0100'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['name'], original_name)
+        self.assertEqual(response.data['contact_phone'], '+1-555-0100')
+
+    def test_fleet_manager_cannot_update_company(self):
+        self._login_as('fm01')
+        response = self.client.patch(self.url, {'name': 'Hacked Co'})
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_driver_cannot_update_company(self):
+        self._login_as('drv01')
+        response = self.client.patch(self.url, {'name': 'Hacked Co'})
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_get_returns_404_when_no_company_exists(self):
+        from .models import Company
+
+        Company.objects.all().delete()
+        self._login_as('admin01')
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_update_returns_404_when_no_company_exists(self):
+        from .models import Company
+
+        Company.objects.all().delete()
+        self._login_as('admin01')
+        response = self.client.patch(self.url, {'contact_email': 'x@example.com'})
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
