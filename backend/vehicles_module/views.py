@@ -5,8 +5,10 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from auth_module.permissions import IsAdminOrFleetManager, IsDriver
+from auth_module.permissions import IsAdmin, IsAdminOrFleetManager, IsDriver
 from .serializers import (
+    CompanySerializer,
+    CompanyUpdateSerializer,
     DriverCreateSerializer,
     DriverSerializer,
     DriverUpdateSerializer,
@@ -15,7 +17,7 @@ from .serializers import (
     VehicleManagerUpdateSerializer,
     VehicleSerializer,
 )
-from .services import DriverService, VehicleService
+from .services import CompanyService, DriverService, VehicleService
 
 
 def _error_response(exc):
@@ -24,7 +26,7 @@ def _error_response(exc):
         return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
 
     detail = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
-    is_not_found = detail.get('detail') in ('Vehicle not found', 'Driver not found')
+    is_not_found = detail.get('detail') in ('Vehicle not found', 'Driver not found', 'Company not found')
     status_code = status.HTTP_404_NOT_FOUND if is_not_found else status.HTTP_400_BAD_REQUEST
     return Response(detail, status=status_code)
 
@@ -228,3 +230,35 @@ class DriverDetailView(APIView):
             return _error_response(exc)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+class CompanyView(APIView):
+
+    permission_classes = [IsAuthenticated, IsAdmin]
+
+    @extend_schema(
+        responses={200: CompanySerializer, 403: 'Forbidden', 404: 'Not Found'},
+        summary='Retrieve company information (admin only)',
+        description='Single-tenant deployment: returns the one Company record for this system.',
+    )
+    def get(self, request):
+        try:
+            company = CompanyService.get_company()
+        except ValidationError as exc:
+            return _error_response(exc)
+        return Response(CompanySerializer(company).data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        request=CompanyUpdateSerializer,
+        responses={200: CompanySerializer, 400: 'Bad Request', 403: 'Forbidden', 404: 'Not Found'},
+        summary='Update company information (admin only)',
+    )
+    def patch(self, request):
+        serializer = CompanyUpdateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            company = CompanyService.update_company(request.user, serializer.validated_data)
+        except (ValidationError, PermissionDenied) as exc:
+            return _error_response(exc)
+
+        return Response(CompanySerializer(company).data, status=status.HTTP_200_OK)
