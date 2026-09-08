@@ -2,10 +2,10 @@ import logging
 
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import IntegrityError, models
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone as django_timezone
 
-from .models import OBU, Driver, Vehicle
+from .models import OBU, Company, Driver, Vehicle
 
 audit_logger = logging.getLogger('audit')
 degradation_logger = logging.getLogger('fleet_monitoring.cache_degradation')
@@ -103,17 +103,20 @@ class VehicleService:
         if actor.is_fleet_manager:
             data['assigned_manager'] = actor
 
-        vehicle = Vehicle(**data)
+        data['company'] = CompanyService.get_company()
+
         try:
-            vehicle.full_clean()
-            vehicle.save()
+            with transaction.atomic():
+                vehicle = Vehicle(**data)
+                vehicle.full_clean()
+                vehicle.save()
+
+                if obu_serial:
+                    obu = OBU(vehicle=vehicle, serial_number=obu_serial, firmware_version=obu_firmware)
+                    obu.full_clean()
+                    obu.save()
         except IntegrityError as exc:
             raise _integrity_error_to_validation(exc)
-
-        if obu_serial:
-            obu = OBU(vehicle=vehicle, serial_number=obu_serial, firmware_version=obu_firmware)
-            obu.full_clean()
-            obu.save()
 
         audit_logger.info(
             'vehicle_created', extra={'actor': actor.id, 'action': 'create_vehicle', 'target': vehicle.id}
@@ -135,21 +138,22 @@ class VehicleService:
             setattr(vehicle, field, value)
 
         try:
-            vehicle.full_clean()
-            vehicle.save()
+            with transaction.atomic():
+                vehicle.full_clean()
+                vehicle.save()
+
+                if obu_serial is not None or obu_firmware is not None:
+                    obu = getattr(vehicle, 'obu', None)
+                    if obu is None:
+                        obu = OBU(vehicle=vehicle, serial_number=obu_serial or '')
+                    if obu_serial is not None:
+                        obu.serial_number = obu_serial
+                    if obu_firmware is not None:
+                        obu.firmware_version = obu_firmware
+                    obu.full_clean()
+                    obu.save()
         except IntegrityError as exc:
             raise _integrity_error_to_validation(exc)
-
-        if obu_serial is not None or obu_firmware is not None:
-            obu = getattr(vehicle, 'obu', None)
-            if obu is None:
-                obu = OBU(vehicle=vehicle, serial_number=obu_serial or '')
-            if obu_serial is not None:
-                obu.serial_number = obu_serial
-            if obu_firmware is not None:
-                obu.firmware_version = obu_firmware
-            obu.full_clean()
-            obu.save()
 
         VehicleService._invalidate_status_cache(vehicle.id)
         audit_logger.info(
@@ -291,6 +295,36 @@ class DriverService:
         audit_logger.info(
             'driver_deleted', extra={'actor': actor.id, 'action': 'delete_driver', 'target': driver_id}
         )
+
+class CompanyService:
+
+    @staticmethod
+    def get_company():
+        company = Company.objects.first()
+        if company is None:
+            raise ValidationError({'detail': 'Company not found'})
+        return company
+
+    @staticmethod
+    def update_company(actor, data):
+        if not actor.is_admin:
+            raise PermissionDenied('Only admin can update company information')
+
+        company = CompanyService.get_company()
+
+        for field, value in data.items():
+            setattr(company, field, value)
+
+        try:
+            company.full_clean()
+            company.save()
+        except IntegrityError as exc:
+            raise _integrity_error_to_validation(exc)
+
+        audit_logger.info(
+            'company_updated', extra={'actor': actor.id, 'action': 'update_company', 'target': company.id}
+        )
+        return company
 
 
 def _integrity_error_to_validation(exc):
