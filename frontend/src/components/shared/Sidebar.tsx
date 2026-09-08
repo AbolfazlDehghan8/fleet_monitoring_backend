@@ -28,6 +28,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/drivers', labelKey: 'nav.drivers', icon: Users, roles: [ROLES.ADMIN, ROLES.FLEET_MANAGER] },
   { to: '/telemetry', labelKey: 'nav.telemetry', icon: Radio, roles: [ROLES.ADMIN, ROLES.FLEET_MANAGER] },
   { to: '/alerts', labelKey: 'nav.alerts', icon: AlertTriangle, roles: [ROLES.ADMIN, ROLES.FLEET_MANAGER] },
+  { to: '/my-alerts', labelKey: 'nav.alerts', icon: AlertTriangle, roles: [ROLES.DRIVER] },
   { to: '/rules', labelKey: 'nav.rules', icon: ListChecks, roles: [ROLES.ADMIN] },
   { to: '/reports', labelKey: 'nav.reports', icon: FileBarChart, roles: [ROLES.ADMIN, ROLES.FLEET_MANAGER] },
   { to: '/admin/users', labelKey: 'nav.users', icon: ShieldCheck, roles: [ROLES.ADMIN] },

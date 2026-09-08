@@ -12,12 +12,28 @@ import { ErrorState } from '@/components/shared/ErrorState';
 import { CardGridSkeleton, TableSkeleton } from '@/components/shared/LoadingSkeleton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ROLES } from '@/constants/roles';
 import type { VehicleStatus } from '@/constants/statuses';
 import { useAlerts } from '@/features/alerts/hooks';
+import { useAuth } from '@/features/auth/AuthContext';
+import { DriverDashboardPage } from '@/features/dashboard/DriverDashboardPage';
 import { useDashboardStats, useVehicles } from '@/features/vehicles/hooks';
 import { formatRelativeTime } from '@/utils/formatters';
 
 export function DashboardPage() {
+  const { user } = useAuth();
+
+  // Drivers only have access to their own vehicle(s) and alerts (see 01_Project_Overview §5) —
+  // the fleet-wide stats/vehicles/alerts endpoints below are Admin/Fleet Manager only and
+  // would 403 for a driver, so they get a dedicated view instead.
+  if (user?.role === ROLES.DRIVER) {
+    return <DriverDashboardPage />;
+  }
+
+  return <OperatorDashboardPage />;
+}
+
+function OperatorDashboardPage() {
   const { t } = useLanguage();
   const statsQuery = useDashboardStats();
   const vehiclesQuery = useVehicles();

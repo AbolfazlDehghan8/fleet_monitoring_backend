@@ -69,6 +69,7 @@ export function VehicleFormPage() {
   const createMutation = useCreateVehicle();
   const updateMutation = useUpdateVehicle(vehicleId ?? -1);
   const vehicleSchema = useVehicleSchema(t);
+  const submitLockRef = React.useRef(false);
 
   // Only admins can reassign a vehicle's manager, and only admins can query
   // the fleet-manager roster (see auth_module.permissions.IsAdmin).
@@ -139,6 +140,9 @@ export function VehicleFormPage() {
   }
 
   async function onSubmit(values: VehicleFormValues) {
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
+
     const payload = {
       license_plate: values.license_plate,
       vin: values.vin || null,
@@ -167,6 +171,8 @@ export function VehicleFormPage() {
         description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
         variant: 'destructive',
       });
+    } finally {
+      submitLockRef.current = false;
     }
   }
 
@@ -317,7 +323,7 @@ export function VehicleFormPage() {
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={() => navigate('/vehicles')}>
+              <Button type="button" variant="outline" disabled={isSubmitting} onClick={() => navigate('/vehicles')}>
                 {t('common.cancel')}
               </Button>
               <Button type="submit" disabled={isSubmitting}>

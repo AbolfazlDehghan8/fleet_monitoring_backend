@@ -22,6 +22,9 @@ const VehicleDetailPage = React.lazy(() =>
 const VehicleFormPage = React.lazy(() =>
   import('@/features/vehicles/VehicleFormPage').then((m) => ({ default: m.VehicleFormPage })),
 );
+const MyVehicleDetailPage = React.lazy(() =>
+  import('@/features/vehicles/MyVehicleDetailPage').then((m) => ({ default: m.MyVehicleDetailPage })),
+);
 const DriversListPage = React.lazy(() =>
   import('@/features/drivers/DriversListPage').then((m) => ({ default: m.DriversListPage })),
 );
@@ -39,6 +42,9 @@ const TelemetryPage = React.lazy(() =>
 );
 const AlertsListPage = React.lazy(() =>
   import('@/features/alerts/AlertsListPage').then((m) => ({ default: m.AlertsListPage })),
+);
+const MyAlertsListPage = React.lazy(() =>
+  import('@/features/alerts/MyAlertsListPage').then((m) => ({ default: m.MyAlertsListPage })),
 );
 const AlertDetailPage = React.lazy(() =>
   import('@/features/alerts/AlertDetailPage').then((m) => ({ default: m.AlertDetailPage })),
@@ -112,6 +118,33 @@ export function AppRouter() {
               </Suspended>
             }
           />
+
+          <Route element={<RequireAuth allowedRoles={[ROLES.DRIVER]} />}>
+            <Route
+              path="my-vehicle/:id"
+              element={
+                <Suspended>
+                  <MyVehicleDetailPage />
+                </Suspended>
+              }
+            />
+            <Route
+              path="my-alerts"
+              element={
+                <Suspended>
+                  <MyAlertsListPage />
+                </Suspended>
+              }
+            />
+            <Route
+              path="my-alerts/:id"
+              element={
+                <Suspended>
+                  <AlertDetailPage backTo="/my-alerts" backLabelKey="alertDetail.backToMyAlerts" />
+                </Suspended>
+              }
+            />
+          </Route>
 
           <Route element={<RequireAuth allowedRoles={OPERATOR_ROLES} />}>
             <Route

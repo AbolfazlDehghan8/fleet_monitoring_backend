@@ -7,6 +7,7 @@ import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageHeader } from '@/components/shared/PageHeader';
+import { usePagination, PaginationControls } from '@/components/shared/Pagination';
 import { SeverityBadge } from '@/components/shared/SeverityBadge';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { TelemetryChart } from '@/features/telemetry/TelemetryChart';
 import { useTelemetry } from '@/features/telemetry/hooks';
 import { useDeleteVehicle, useVehicle, useVehicleStatus } from '@/features/vehicles/hooks';
+import type { Alert } from '@/types/alerts';
 import { ApiError } from '@/types/common';
 import {
   formatDateTime,
@@ -224,27 +226,38 @@ export function VehicleDetailPage() {
         </CardHeader>
         <CardContent>
           {relatedAlerts.length > 0 ? (
-            <ul className="divide-y divide-border">
-              {relatedAlerts.map((alert) => (
-                <li key={alert.id}>
-                  <Link
-                    to={`/alerts/${alert.id}`}
-                    className="flex items-center justify-between gap-3 py-3 transition-colors hover:text-primary"
-                  >
-                    <div className="min-w-0 space-y-0.5">
-                      <p className="truncate text-sm font-medium">{alert.rule_name}</p>
-                      <p className="text-xs text-muted-foreground">{formatRelativeTime(alert.created_at)}</p>
-                    </div>
-                    <SeverityBadge severity={alert.severity} />
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <RelatedAlertsList alerts={relatedAlerts} />
           ) : (
             <EmptyState title={t('vehicleDetail.noAlerts')} description={t('vehicleDetail.noAlertsDesc')} />
           )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function RelatedAlertsList({ alerts }: { alerts: Alert[] }) {
+  const { page, setPage, totalPages, pageItems, totalCount } = usePagination(alerts, 5);
+
+  return (
+    <div className="space-y-1">
+      <ul className="divide-y divide-border">
+        {pageItems.map((alert) => (
+          <li key={alert.id}>
+            <Link
+              to={`/alerts/${alert.id}`}
+              className="flex items-center justify-between gap-3 py-3 transition-colors hover:text-primary"
+            >
+              <div className="min-w-0 space-y-0.5">
+                <p className="truncate text-sm font-medium">{alert.rule_name}</p>
+                <p className="text-xs text-muted-foreground">{formatRelativeTime(alert.created_at)}</p>
+              </div>
+              <SeverityBadge severity={alert.severity} />
+            </Link>
+          </li>
+        ))}
+      </ul>
+      <PaginationControls page={page} totalPages={totalPages} totalCount={totalCount} onPageChange={setPage} className="pt-3" />
     </div>
   );
 }

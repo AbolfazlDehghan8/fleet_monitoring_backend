@@ -124,6 +124,13 @@ const en = {
   'dashboard.noAlerts': 'No alerts',
   'dashboard.noAlertsDesc': 'Your fleet is running clean.',
   'dashboard.vehiclesByStatus': 'Vehicles by Status',
+  'dashboard.driverDescription': "View your assigned vehicle's live status and manage your own alerts.",
+  'dashboard.myVehicle': 'My Vehicle',
+  'dashboard.noVehicleAssigned': 'No vehicle assigned yet',
+  'dashboard.noVehicleAssignedDesc': 'Once a vehicle is assigned to you, it will appear here.',
+  'dashboard.myAlerts': 'My Alerts',
+  'dashboard.noAlertsDriverDesc': 'You have no alerts right now.',
+  'dashboard.viewDetails': 'View Details',
 
   // Vehicles
   'vehicles.title': 'Vehicles',
@@ -142,6 +149,7 @@ const en = {
   'vehicles.failedToDelete': 'Failed to delete vehicle',
 
   'vehicleDetail.backToVehicles': 'Back to vehicles',
+  'vehicleDetail.backToDashboard': 'Back to dashboard',
   'vehicleDetail.unableToLoad': 'Unable to load vehicle',
   'vehicleDetail.deleteConfirmDesc': 'This cannot be undone.',
   'vehicleDetail.speed': 'Speed',
@@ -282,7 +290,15 @@ const en = {
   'alerts.alertAcknowledged': 'Alert acknowledged',
   'alerts.failedToAcknowledge': 'Failed to acknowledge alert',
 
+  // My Alerts (driver)
+  'myAlerts.title': 'My Alerts',
+  'myAlerts.description': 'Review and acknowledge alerts on your assigned vehicle.',
+  'myAlerts.searchPlaceholder': 'Search rule, metric…',
+  'myAlerts.noMatch': 'No alerts match your filters',
+  'myAlerts.noMatchDesc': 'Try clearing filters, or you may simply have no alerts right now.',
+
   'alertDetail.backToAlerts': 'Back to alerts',
+  'alertDetail.backToMyAlerts': 'Back to my alerts',
   'alertDetail.unableToLoad': 'Unable to load alert',
   'alertDetail.triggeredOn': 'Triggered on {vehicle} · {time}',
   'alertDetail.acknowledging': 'Acknowledging…',
@@ -555,6 +571,13 @@ const fa: Record<keyof typeof en, string> = {
   'dashboard.noAlerts': 'هشداری وجود ندارد',
   'dashboard.noAlertsDesc': 'وضعیت ناوگان شما مطلوب است.',
   'dashboard.vehiclesByStatus': 'خودروها بر اساس وضعیت',
+  'dashboard.driverDescription': 'وضعیت زنده‌ی خودروی خود را مشاهده کنید و هشدارهای خودتان را مدیریت کنید.',
+  'dashboard.myVehicle': 'خودروی من',
+  'dashboard.noVehicleAssigned': 'هنوز خودرویی به شما اختصاص نیافته',
+  'dashboard.noVehicleAssignedDesc': 'به محض تخصیص یک خودرو به شما، در اینجا نمایش داده می‌شود.',
+  'dashboard.myAlerts': 'هشدارهای من',
+  'dashboard.noAlertsDriverDesc': 'در حال حاضر هشداری ندارید.',
+  'dashboard.viewDetails': 'مشاهده جزئیات',
 
   'vehicles.title': 'خودروها',
   'vehicles.description': 'مدیریت فهرست خودروها، تخصیص‌ها و وضعیت آن‌ها.',
@@ -572,6 +595,7 @@ const fa: Record<keyof typeof en, string> = {
   'vehicles.failedToDelete': 'حذف خودرو ناموفق بود',
 
   'vehicleDetail.backToVehicles': 'بازگشت به فهرست خودروها',
+  'vehicleDetail.backToDashboard': 'بازگشت به داشبورد',
   'vehicleDetail.unableToLoad': 'دریافت اطلاعات خودرو ممکن نشد',
   'vehicleDetail.deleteConfirmDesc': 'این عملیات قابل بازگشت نیست.',
   'vehicleDetail.speed': 'سرعت',
@@ -709,7 +733,15 @@ const fa: Record<keyof typeof en, string> = {
   'alerts.alertAcknowledged': 'هشدار تأیید شد',
   'alerts.failedToAcknowledge': 'تأیید هشدار ناموفق بود',
 
+  // هشدارهای من (راننده)
+  'myAlerts.title': 'هشدارهای من',
+  'myAlerts.description': 'بررسی و تأیید هشدارهای مربوط به خودروی اختصاصی‌ شما.',
+  'myAlerts.searchPlaceholder': 'جستجوی قانون، معیار…',
+  'myAlerts.noMatch': 'هیچ هشداری با فیلترهای شما مطابقت ندارد',
+  'myAlerts.noMatchDesc': 'فیلترها را پاک کنید یا در حال حاضر هشداری ندارید.',
+
   'alertDetail.backToAlerts': 'بازگشت به فهرست هشدارها',
+  'alertDetail.backToMyAlerts': 'بازگشت به هشدارهای من',
   'alertDetail.unableToLoad': 'دریافت اطلاعات هشدار ممکن نشد',
   'alertDetail.triggeredOn': 'وقوع در {vehicle} · {time}',
   'alertDetail.acknowledging': 'در حال تأیید…',

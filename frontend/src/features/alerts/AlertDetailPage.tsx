@@ -16,7 +16,20 @@ import { useAcknowledgeAlert, useAlert } from '@/features/alerts/hooks';
 import { formatDateTime } from '@/utils/formatters';
 import { ApiError } from '@/types/common';
 
-export function AlertDetailPage() {
+/**
+ * Shared alert detail view. The underlying `/alerts/:id/` and `/alerts/:id/acknowledge/`
+ * endpoints scope-check server-side (Admin/Fleet Manager/Driver each see only what they're
+ * allowed to), so this same page serves the driver's own-alert detail too — only the back
+ * link needs to point at the caller's list page (`/alerts` for operators, `/my-alerts` for
+ * drivers).
+ */
+export function AlertDetailPage({
+  backTo = '/alerts',
+  backLabelKey = 'alertDetail.backToAlerts',
+}: {
+  backTo?: string;
+  backLabelKey?: 'alertDetail.backToAlerts' | 'alertDetail.backToMyAlerts';
+}) {
   const { t } = useLanguage();
   const params = useParams<{ id: string }>();
   const alertId = Number(params.id);
@@ -56,9 +69,9 @@ export function AlertDetailPage() {
     <div className="space-y-6">
       <div>
         <Button asChild variant="ghost" size="sm" className="mb-2 -ms-2 text-muted-foreground">
-          <Link to="/alerts">
+          <Link to={backTo}>
             <ArrowLeft className="size-3.5" />
-            {t('alertDetail.backToAlerts')}
+            {t(backLabelKey)}
           </Link>
         </Button>
         <PageHeader

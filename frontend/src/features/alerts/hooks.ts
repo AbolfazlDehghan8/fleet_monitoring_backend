@@ -40,3 +40,13 @@ export function useAcknowledgeAlert() {
     },
   });
 }
+
+export function useAcknowledgeMyAlert() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (alertId: number) => alertsApi.acknowledgeMine(alertId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.alerts.mine });
+    },
+  });
+}
