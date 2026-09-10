@@ -12,6 +12,7 @@ from .serializers import (
     DriverCreateSerializer,
     DriverSerializer,
     DriverUpdateSerializer,
+    LinkableUserSerializer,
     VehicleAdminUpdateSerializer,
     VehicleCreateSerializer,
     VehicleManagerUpdateSerializer,
@@ -192,6 +193,48 @@ class DriverListCreateView(APIView):
             return _error_response(exc)
 
         return Response(DriverSerializer(driver).data, status=status.HTTP_201_CREATED)
+
+
+class DriverLinkableUsersView(APIView):
+
+    permission_classes = [IsAuthenticated, IsAdminOrFleetManager]
+
+    @extend_schema(
+        responses={200: LinkableUserSerializer(many=True)},
+        summary='List driver-role users with no driver profile yet',
+        description=(
+            'Admin and Fleet Manager only. Narrow, read-only lookup used to populate the '
+            '"linked user" picker on the driver-profile creation form. Does NOT expose '
+            'general user management — that stays admin-only at /api/v1/admin/users/.'
+        ),
+    )
+    def get(self, request):
+        try:
+            users = DriverService.list_linkable_users(request.user)
+        except PermissionDenied as exc:
+            return _error_response(exc)
+        return Response(LinkableUserSerializer(users, many=True).data, status=status.HTTP_200_OK)
+
+
+class DriverAssignableListView(APIView):
+
+    permission_classes = [IsAuthenticated, IsAdminOrFleetManager]
+
+    @extend_schema(
+        responses={200: DriverSerializer(many=True)},
+        summary='List drivers eligible for assignment to a vehicle',
+        description=(
+            'Admin sees all drivers. Fleet Manager sees drivers already assigned to one of '
+            'their vehicles PLUS drivers not yet linked to any vehicle, so a freshly created '
+            'driver profile can be selected in the vehicle-assignment dropdown.'
+        ),
+    )
+    def get(self, request):
+        try:
+            drivers = DriverService.list_assignable(request.user)
+        except PermissionDenied as exc:
+            return _error_response(exc)
+        return Response(DriverSerializer(drivers, many=True).data, status=status.HTTP_200_OK)
 
 
 class DriverDetailView(APIView):
