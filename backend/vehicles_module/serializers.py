@@ -28,6 +28,13 @@ class DriverSerializer(serializers.ModelSerializer):
         return f"{obj.user.first_name} {obj.user.last_name}".strip() or obj.user.username
 
 
+class LinkableUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id', 'username', 'email', 'first_name', 'last_name']
+        read_only_fields = fields
+
+
 class DriverCreateSerializer(serializers.Serializer):
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='driver'))
     license_number = serializers.CharField(max_length=50)
