@@ -267,6 +267,85 @@ class DriverEndpointTests(VehicleTestBase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
+class DriverLinkableUsersTests(VehicleTestBase):
+    """self.driver_user already has a Driver profile (created in setUp), so it
+    must never appear in this list — only role=driver users still unlinked."""
+
+    def test_fleet_manager_sees_unlinked_driver_users_only(self):
+        unlinked = User.objects.create_user(
+            username='drv10', email='drv10@example.com', password='StrongPass123', role='driver'
+        )
+        self._login_as('fm01')
+        response = self.client.get(reverse('driver-linkable-users'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {row['id'] for row in response.data}
+        self.assertIn(unlinked.id, returned_ids)
+        self.assertNotIn(self.driver_user.id, returned_ids)
+
+    def test_admin_sees_unlinked_driver_users(self):
+        unlinked = User.objects.create_user(
+            username='drv11', email='drv11@example.com', password='StrongPass123', role='driver'
+        )
+        self._login_as('admin01')
+        response = self.client.get(reverse('driver-linkable-users'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn(unlinked.id, {row['id'] for row in response.data})
+
+    def test_driver_cannot_access_linkable_users(self):
+        self._login_as('drv01')
+        response = self.client.get(reverse('driver-linkable-users'))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class DriverAssignableListTests(VehicleTestBase):
+    def test_fleet_manager_sees_own_plus_unassigned_drivers(self):
+        from .models import Company
+
+        company = Company.objects.create(name='Acme Assignable Co')
+
+        # self.driver is linked to a vehicle owned by fm01.
+        Vehicle.objects.create(
+            vehicle_id='veh_g', license_plate='PLT-G', company=company,
+            assigned_manager=self.manager, driver=self.driver,
+        )
+        # Freshly created driver profile — not on any vehicle yet.
+        free_user = User.objects.create_user(
+            username='drv12', email='drv12@example.com', password='StrongPass123', role='driver'
+        )
+        free_driver = Driver.objects.create(user=free_user, license_number='DL-012')
+        # Driver assigned to a DIFFERENT fleet manager's vehicle — must stay hidden.
+        other_user = User.objects.create_user(
+            username='drv13', email='drv13@example.com', password='StrongPass123', role='driver'
+        )
+        other_driver = Driver.objects.create(user=other_user, license_number='DL-013')
+        Vehicle.objects.create(
+            vehicle_id='veh_h', license_plate='PLT-H', company=company,
+            assigned_manager=self.other_manager, driver=other_driver,
+        )
+
+        self._login_as('fm01')
+        response = self.client.get(reverse('driver-assignable-list'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {row['id'] for row in response.data}
+        self.assertEqual(returned_ids, {self.driver.id, free_driver.id})
+
+    def test_admin_sees_all_drivers_including_unassigned(self):
+        free_user = User.objects.create_user(
+            username='drv14', email='drv14@example.com', password='StrongPass123', role='driver'
+        )
+        Driver.objects.create(user=free_user, license_number='DL-014')
+
+        self._login_as('admin01')
+        response = self.client.get(reverse('driver-assignable-list'))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), Driver.objects.count())
+
+    def test_driver_role_cannot_access_assignable_list(self):
+        self._login_as('drv01')
+        response = self.client.get(reverse('driver-assignable-list'))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
 class CompanyModelTests(VehicleTestBase):
     def test_company_can_be_created_and_linked_to_vehicle(self):
         from .models import Company
