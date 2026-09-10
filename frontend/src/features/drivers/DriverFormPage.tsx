@@ -1,12 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { ArrowLeft, Loader2, Save } from 'lucide-react';
-import * as React from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { z } from 'zod';
 
 import { useLanguage } from '@/app/LanguageContext';
-import { adminUsersApi } from '@/api/admin';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Button } from '@/components/ui/button';
@@ -16,9 +14,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/ui/use-toast';
-import { ROLES } from '@/constants/roles';
-import { useAuth } from '@/features/auth/AuthContext';
-import { useCreateDriver, useDriver, useUpdateDriver } from '@/features/vehicles/hooks';
+import {
+  useCreateDriver,
+  useDriver,
+  useLinkableDriverUsers,
+  useUpdateDriver,
+} from '@/features/vehicles/hooks';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
 
@@ -47,31 +48,20 @@ export function DriverFormPage() {
   const isEditing = Boolean(params.id);
   const driverId = params.id ? Number(params.id) : undefined;
   const navigate = useNavigate();
-  const { user } = useAuth();
-  const isAdmin = user?.role === ROLES.ADMIN;
 
   const driverQuery = useDriver(driverId);
   const createMutation = useCreateDriver();
   const updateMutation = useUpdateDriver(driverId ?? -1);
   const { createSchema, editSchema } = useSchemas(t);
 
-  // Admin can pick from unlinked driver-role users; the backend has no endpoint
-  // for a Fleet Manager to browse users, so they enter the numeric user id
-  // directly (visible on the Admin > Users page).
-  const [driverUsers, setDriverUsers] = React.useState<{ id: number; label: string }[]>([]);
-  React.useEffect(() => {
-    if (isEditing || !isAdmin) return;
-    let cancelled = false;
-    adminUsersApi
-      .list({ role: ROLES.DRIVER })
-      .then((users) => {
-        if (!cancelled) setDriverUsers(users.map((u) => ({ id: u.id, label: `${u.username} (${u.email})` })));
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [isEditing, isAdmin]);
+  // Available to Admin AND Fleet Manager alike — a narrow, read-only lookup of
+  // driver-role users who don't have a driver profile yet (no numeric-ID guessing,
+  // no need to ask an admin per profile).
+  const linkableUsersQuery = useLinkableDriverUsers();
+  const driverUsers = (linkableUsersQuery.data ?? []).map((u) => ({
+    id: u.id,
+    label: `${u.username} (${u.email})`,
+  }));
 
   const createForm = useForm<CreateValues>({
     resolver: zodResolver(createSchema),
@@ -189,34 +179,36 @@ export function DriverFormPage() {
             <form onSubmit={createForm.handleSubmit(onCreate)} className="space-y-5" noValidate>
               <div className="space-y-1.5">
                 <Label>{t('driverForm.linkedUser')}</Label>
-                {isAdmin ? (
-                  <Controller
-                    control={createForm.control}
-                    name="user"
-                    render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t('driverForm.selectDriverUser')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {driverUsers.map((u) => (
-                            <SelectItem key={u.id} value={String(u.id)}>
-                              {u.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  />
-                ) : (
-                  <>
-                    <Input
-                      type="number"
-                      placeholder={t('driverForm.numericUserId')}
-                      {...createForm.register('user')}
-                    />
-                    <p className="text-xs text-muted-foreground">{t('driverForm.askAdminForId')}</p>
-                  </>
+                <Controller
+                  control={createForm.control}
+                  name="user"
+                  render={({ field }) => (
+                    <Select
+                      value={field.value}
+                      onValueChange={field.onChange}
+                      disabled={linkableUsersQuery.isLoading}
+                    >
+                      <SelectTrigger>
+                        <SelectValue
+                          placeholder={
+                            linkableUsersQuery.isLoading
+                              ? t('driverForm.loadingUsers')
+                              : t('driverForm.selectDriverUser')
+                          }
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {driverUsers.map((u) => (
+                          <SelectItem key={u.id} value={String(u.id)}>
+                            {u.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                />
+                {!linkableUsersQuery.isLoading && driverUsers.length === 0 && (
+                  <p className="text-xs text-muted-foreground">{t('driverForm.noLinkableUsers')}</p>
                 )}
                 {createForm.formState.errors.user && (
                   <p className="text-xs text-destructive">{createForm.formState.errors.user.message}</p>

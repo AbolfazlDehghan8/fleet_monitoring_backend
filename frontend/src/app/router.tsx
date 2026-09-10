@@ -31,6 +31,9 @@ const DriversListPage = React.lazy(() =>
 const DriverFormPage = React.lazy(() =>
   import('@/features/drivers/DriverFormPage').then((m) => ({ default: m.DriverFormPage })),
 );
+const ProfilePage = React.lazy(() =>
+  import('@/features/profile/ProfilePage').then((m) => ({ default: m.ProfilePage })),
+);
 const AdminUsersListPage = React.lazy(() =>
   import('@/features/admin/AdminUsersListPage').then((m) => ({ default: m.AdminUsersListPage })),
 );
@@ -115,6 +118,16 @@ export function AppRouter() {
             element={
               <Suspended>
                 <DashboardPage />
+              </Suspended>
+            }
+          />
+
+          {/* Available to every authenticated role — admin, fleet manager, driver. */}
+          <Route
+            path="profile"
+            element={
+              <Suspended>
+                <ProfilePage />
               </Suspended>
             }
           />

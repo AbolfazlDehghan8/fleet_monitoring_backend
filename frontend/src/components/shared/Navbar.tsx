@@ -1,4 +1,5 @@
 import { LogOut, Menu, Truck, User as UserIcon } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 import { useLanguage } from '@/app/LanguageContext';
 import { LanguageToggle } from '@/components/shared/LanguageToggle';
@@ -55,6 +56,13 @@ export function Navbar({ onMenuClick }: { onMenuClick: () => void }) {
               <DropdownMenuItem disabled>
                 <UserIcon className="size-4" />
                 {user.email}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild>
+                <Link to="/profile">
+                  <UserIcon className="size-4" />
+                  {t('navbar.profile')}
+                </Link>
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => void logout()} className="text-destructive focus:text-destructive">

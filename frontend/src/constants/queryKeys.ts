@@ -10,6 +10,8 @@ export const queryKeys = {
   },
   drivers: {
     all: ['drivers'] as const,
+    linkableUsers: ['drivers', 'linkable-users'] as const,
+    assignable: ['drivers', 'assignable'] as const,
   },
   adminUsers: {
     all: (role?: string) => ['admin', 'users', role ?? 'all'] as const,

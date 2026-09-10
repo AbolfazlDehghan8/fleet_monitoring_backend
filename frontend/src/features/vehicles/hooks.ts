@@ -53,6 +53,8 @@ export function useCreateVehicle() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats });
+      // A driver may have moved from the free pool onto this vehicle.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.assignable });
     },
   });
 }
@@ -65,6 +67,8 @@ export function useUpdateVehicle(vehicleId: number) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.detail(vehicleId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats });
+      // A driver may have been (re)assigned to or freed from this vehicle.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.assignable });
     },
   });
 }
@@ -80,6 +84,7 @@ export function useDeleteVehicle() {
   });
 }
 
+/** Roster view (Admin: all; Fleet Manager: assigned only) — for the /drivers list page. */
 export function useDrivers() {
   return useQuery({
     queryKey: queryKeys.drivers.all,
@@ -87,11 +92,35 @@ export function useDrivers() {
   });
 }
 
+/** Driver-role users with no driver profile yet — for the driver-creation form's
+ * "linked user" picker. Available to Admin and Fleet Manager alike. */
+export function useLinkableDriverUsers() {
+  return useQuery({
+    queryKey: queryKeys.drivers.linkableUsers,
+    queryFn: driversApi.listLinkableUsers,
+  });
+}
+
+/** Drivers eligible for assignment to a vehicle the current actor manages — for
+ * the vehicle form's driver dropdown. Includes not-yet-assigned drivers, unlike
+ * `useDrivers`, so a freshly created driver profile is actually selectable. */
+export function useAssignableDrivers() {
+  return useQuery({
+    queryKey: queryKeys.drivers.assignable,
+    queryFn: driversApi.listAssignable,
+  });
+}
+
 export function useCreateDriver() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: DriverCreateRequest) => driversApi.create(payload),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all });
+      // The new driver leaves the "linkable users" pool and enters the "assignable" one.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.linkableUsers });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.assignable });
+    },
   });
 }
 
@@ -119,6 +148,9 @@ export function useDeleteDriver() {
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.all });
+      // The linked user becomes "linkable" again; the driver leaves the assignable pool.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.linkableUsers });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.assignable });
     },
   });
 }

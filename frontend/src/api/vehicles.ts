@@ -4,6 +4,7 @@ import type {
   Driver,
   DriverCreateRequest,
   DriverUpdateRequest,
+  LinkableUser,
   Vehicle,
   VehicleCreateRequest,
   VehicleStatusPayload,
@@ -37,7 +38,21 @@ export const vehiclesApi = {
 };
 
 export const driversApi = {
+  /** Roster view — Admin sees every driver; Fleet Manager sees only drivers
+   * already assigned to their vehicles (per the Access Control Matrix). */
   list: () => apiClient.get<ApiList<Driver>>('/vehicles/drivers/').then((r) => r.data),
+
+  /** Driver-role users with no driver profile yet. Populates the "linked user"
+   * picker on the driver-profile creation form for Admin AND Fleet Manager. */
+  listLinkableUsers: () =>
+    apiClient.get<ApiList<LinkableUser>>('/vehicles/drivers/linkable-users/').then((r) => r.data),
+
+  /** Drivers eligible for assignment to a vehicle this actor manages: Admin sees
+   * all; Fleet Manager sees drivers on their own vehicles PLUS drivers not yet
+   * linked to any vehicle. Use this (not `list`) to populate the vehicle-form
+   * driver dropdown, otherwise a freshly created driver can never be selected. */
+  listAssignable: () =>
+    apiClient.get<ApiList<Driver>>('/vehicles/drivers/assignable/').then((r) => r.data),
 
   get: (driverId: number) => apiClient.get<Driver>(`/vehicles/drivers/${driverId}/`).then((r) => r.data),
 

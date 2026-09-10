@@ -23,6 +23,10 @@ interface AuthContextValue {
   isInitializing: boolean;
   login: (payload: LoginRequest) => Promise<void>;
   logout: () => Promise<void>;
+  /** Merges a partial profile update (e.g. after editing the account page) into the
+   * session user and persisted storage, so the navbar/sidebar reflect it immediately
+   * without a full re-login. */
+  updateUser: (patch: Partial<SessionUser>) => void;
 }
 
 const AuthContext = React.createContext<AuthContextValue | undefined>(undefined);
@@ -111,9 +115,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     navigate('/login', { replace: true });
   }, [navigate]);
 
+  const updateUser = React.useCallback((patch: Partial<SessionUser>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const value = React.useMemo(
-    () => ({ user, isAuthenticated: Boolean(user), isInitializing, login, logout }),
-    [user, isInitializing, login, logout],
+    () => ({ user, isAuthenticated: Boolean(user), isInitializing, login, logout, updateUser }),
+    [user, isInitializing, login, logout, updateUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

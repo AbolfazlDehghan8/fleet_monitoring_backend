@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PasswordInput } from '@/components/ui/password-input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/ui/use-toast';
@@ -277,14 +278,14 @@ export function AdminUserFormPage() {
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="password">{t('login.password')}</Label>
-                  <Input id="password" type="password" {...createForm.register('password')} />
+                  <PasswordInput id="password" {...createForm.register('password')} />
                   {createForm.formState.errors.password && (
                     <p className="text-xs text-destructive">{createForm.formState.errors.password.message}</p>
                   )}
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="password_confirm">{t('register.confirmPassword')}</Label>
-                  <Input id="password_confirm" type="password" {...createForm.register('password_confirm')} />
+                  <PasswordInput id="password_confirm" {...createForm.register('password_confirm')} />
                   {createForm.formState.errors.password_confirm && (
                     <p className="text-xs text-destructive">
                       {createForm.formState.errors.password_confirm.message}

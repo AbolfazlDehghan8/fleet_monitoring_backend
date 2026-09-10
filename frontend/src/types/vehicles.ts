@@ -21,6 +21,16 @@ export interface Driver {
   created_at: string;
 }
 
+/** Matches `vehicles_module.serializers.LinkableUserSerializer` — a driver-role
+ * user with no Driver profile yet (returned by GET /vehicles/drivers/linkable-users/). */
+export interface LinkableUser {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+}
+
 export interface DriverCreateRequest {
   user: number;
   license_number: string;

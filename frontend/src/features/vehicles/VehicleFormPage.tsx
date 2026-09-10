@@ -21,7 +21,7 @@ import { useAuth } from '@/features/auth/AuthContext';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
 
-import { useCreateVehicle, useDrivers, useUpdateVehicle, useVehicle } from './hooks';
+import { useAssignableDrivers, useCreateVehicle, useUpdateVehicle, useVehicle } from './hooks';
 
 const NONE = '__none__';
 
@@ -65,7 +65,9 @@ export function VehicleFormPage() {
   const isAdmin = user?.role === ROLES.ADMIN;
 
   const vehicleQuery = useVehicle(vehicleId);
-  const driversQuery = useDrivers();
+  // Not the roster (`useDrivers`) — that's scoped to "already assigned" drivers
+  // only and would never show a freshly created, not-yet-assigned driver here.
+  const driversQuery = useAssignableDrivers();
   const createMutation = useCreateVehicle();
   const updateMutation = useUpdateVehicle(vehicleId ?? -1);
   const vehicleSchema = useVehicleSchema(t);
