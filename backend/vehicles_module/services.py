@@ -5,6 +5,8 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, models, transaction
 from django.utils import timezone as django_timezone
 
+from auth_module.models import User
+
 from .models import OBU, Company, Driver, Vehicle
 
 audit_logger = logging.getLogger('audit')
@@ -251,6 +253,25 @@ class DriverService:
             return DriverService.list_drivers(user).get(id=driver_id)
         except Driver.DoesNotExist:
             _not_found('Driver not found')
+
+    @staticmethod
+    def list_linkable_users(user):
+        if not (user.is_admin or user.is_fleet_manager):
+            raise PermissionDenied('Only admin and fleet_manager may browse driver-role users')
+        return User.objects.filter(
+            role=User.Role.DRIVER, driver_profile__isnull=True
+        ).order_by('username')
+
+    @staticmethod
+    def list_assignable(user):
+        queryset = Driver.objects.select_related('user')
+        if user.is_admin:
+            return queryset
+        if user.is_fleet_manager:
+            return queryset.filter(
+                models.Q(vehicles__assigned_manager=user) | models.Q(vehicles__isnull=True)
+            ).distinct()
+        raise PermissionDenied('Drivers do not have access to the drivers list')
 
     @staticmethod
     def create_driver(actor, data):
