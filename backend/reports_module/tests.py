@@ -196,3 +196,17 @@ class AsyncReportGenerationTests(ReportsTestBase):
         self.assertIsNone(report.requested_by)
         self.assertEqual(report.status, Report.Status.COMPLETED)
         self.assertEqual(report.result['vehicle_count'], 2)
+
+    def test_scheduled_report_result_shape_matches_user_generated_report(self):
+        from .models import Report
+        from .tasks import generate_scheduled_fleet_report
+
+        generate_scheduled_fleet_report()
+        report = Report.objects.latest('created_at')
+
+        self.assertIn('telemetry', report.result)
+        for key in ('total_readings', 'avg_speed', 'avg_fuel_level', 'distance_traveled_km'):
+            self.assertIn(key, report.result['telemetry'])
+
+        for key in ('total', 'by_severity', 'acknowledged', 'unacknowledged', 'avg_acknowledgment_time_seconds'):
+            self.assertIn(key, report.result['alerts'])
