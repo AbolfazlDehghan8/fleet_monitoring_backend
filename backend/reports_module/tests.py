@@ -210,3 +210,118 @@ class AsyncReportGenerationTests(ReportsTestBase):
 
         for key in ('total', 'by_severity', 'acknowledged', 'unacknowledged', 'avg_acknowledgment_time_seconds'):
             self.assertIn(key, report.result['alerts'])
+
+
+class ReportDeletionTests(ReportsTestBase):
+    def test_owner_can_delete_own_report(self):
+        self._auth_as('manager')
+        create = self.client.post(reverse('report-generate'), {})
+        report_id = create.data['id']
+
+        delete = self.client.delete(reverse('report-detail', args=[report_id]))
+        self.assertEqual(delete.status_code, status.HTTP_204_NO_CONTENT)
+
+        detail = self.client.get(reverse('report-detail', args=[report_id]))
+        self.assertEqual(detail.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_manager_cannot_delete_another_managers_report(self):
+        self._auth_as('manager')
+        create = self.client.post(reverse('report-generate'), {})
+        report_id = create.data['id']
+
+        self._auth_as('manager2')
+        delete = self.client.delete(reverse('report-detail', args=[report_id]))
+        self.assertEqual(delete.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_delete_any_report(self):
+        self._auth_as('manager')
+        create = self.client.post(reverse('report-generate'), {})
+        report_id = create.data['id']
+
+        self._auth_as('admin')
+        delete = self.client.delete(reverse('report-detail', args=[report_id]))
+        self.assertEqual(delete.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_deleting_missing_report_returns_404(self):
+        self._auth_as('admin')
+        delete = self.client.delete(reverse('report-detail', args=[999999]))
+        self.assertEqual(delete.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_deleted_report_disappears_from_list(self):
+        self._auth_as('manager')
+        create = self.client.post(reverse('report-generate'), {})
+        report_id = create.data['id']
+        self.client.delete(reverse('report-detail', args=[report_id]))
+
+        listing = self.client.get(reverse('report-list'))
+        self.assertNotIn(report_id, [r['id'] for r in listing.data])
+
+
+class ReportSequenceNumberTests(ReportsTestBase):
+    def test_sequence_numbers_are_gap_free_after_deleting_a_middle_report(self):
+        self._auth_as('manager')
+
+        ids = []
+        for _ in range(3):
+            response = self.client.post(reverse('report-generate'), {})
+            ids.append(response.data['id'])
+        first_id, second_id, third_id = ids
+
+        listing = self.client.get(reverse('report-list'))
+        by_id = {row['id']: row['sequence_number'] for row in listing.data}
+        self.assertEqual(by_id[first_id], 1)
+        self.assertEqual(by_id[second_id], 2)
+        self.assertEqual(by_id[third_id], 3)
+
+        self.client.delete(reverse('report-detail', args=[second_id]))
+
+        listing = self.client.get(reverse('report-list'))
+        by_id = {row['id']: row['sequence_number'] for row in listing.data}
+        self.assertEqual(by_id[first_id], 1)
+        self.assertEqual(by_id[third_id], 2)
+        self.assertEqual(sorted(by_id.values()), [1, 2])
+
+        detail = self.client.get(reverse('report-detail', args=[third_id]))
+        self.assertEqual(detail.data['sequence_number'], 2)
+
+    def test_sequence_numbers_are_scoped_per_user(self):
+        self._auth_as('manager')
+        self.client.post(reverse('report-generate'), {})
+        self.client.post(reverse('report-generate'), {})
+
+        self._auth_as('manager2')
+        response = self.client.post(reverse('report-generate'), {})
+        self.assertEqual(response.data['sequence_number'], 1)
+
+
+class ReportRequesterVisibilityTests(ReportsTestBase):
+    def test_admin_list_shows_who_requested_each_report(self):
+        self._auth_as('manager')
+        self.client.post(reverse('report-generate'), {})
+
+        self._auth_as('admin')
+        own = self.client.post(reverse('report-generate'), {})
+
+        listing = self.client.get(reverse('report-list'))
+        by_id = {row['id']: row for row in listing.data}
+
+        self.assertEqual(by_id[own.data['id']]['requested_by_username'], 'admin')
+        self.assertEqual(by_id[own.data['id']]['requested_by_role'], 'admin')
+
+        manager_report = next(row for row in listing.data if row['requested_by_role'] == 'fleet_manager')
+        self.assertEqual(manager_report['requested_by_username'], 'manager')
+
+        detail = self.client.get(reverse('report-detail', args=[manager_report['id']]))
+        self.assertEqual(detail.data['requested_by_username'], 'manager')
+        self.assertEqual(detail.data['requested_by_role'], 'fleet_manager')
+
+    def test_system_wide_scheduled_report_has_no_requester(self):
+        from .tasks import generate_scheduled_fleet_report
+
+        generate_scheduled_fleet_report()
+
+        self._auth_as('admin')
+        listing = self.client.get(reverse('report-list'))
+        system_report = next(row for row in listing.data if row['requested_by'] is None)
+        self.assertIsNone(system_report['requested_by_username'])
+        self.assertIsNone(system_report['requested_by_role'])
