@@ -118,70 +118,95 @@ export function ReportDetailPage() {
 
       {summary && (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <MetricCard label={t('reportDetail.vehicles')} value={formatNumber(summary.vehicle_count)} />
-            <MetricCard
-              label={t('reportDetail.telemetryReadings')}
-              value={formatNumber(summary.telemetry.total_readings)}
-            />
-            <MetricCard
-              label={t('reportDetail.distanceTraveled')}
-              value={`${formatNumber(summary.telemetry.distance_traveled_km, 1)} km`}
-            />
-            <MetricCard label={t('reportDetail.totalAlerts')} value={formatNumber(summary.alerts.total)} />
-          </div>
+          {/*
+           * Defense-in-depth: the backend now always sends `telemetry` and the full
+           * `alerts` shape (see reports_module.services.ReportService._build_summary),
+           * but we still fall back to safe defaults here in case an older report row,
+           * or any future report source, ever sends a partial payload — a missing
+           * field should degrade to "—" / 0, not crash the whole page.
+           */}
+          {(() => {
+            const telemetry = summary.telemetry ?? {
+              total_readings: 0,
+              avg_speed: null,
+              avg_fuel_level: null,
+              distance_traveled_km: 0,
+            };
+            const alerts = summary.alerts ?? {
+              total: 0,
+              by_severity: {},
+              acknowledged: 0,
+              unacknowledged: 0,
+              avg_acknowledgment_time_seconds: null,
+            };
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base font-semibold text-foreground">
-                  {t('reportDetail.telemetrySummary')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <Row label={t('reportDetail.periodStart')} value={formatDateTime(summary.period.start)} />
-                <Row label={t('reportDetail.periodEnd')} value={formatDateTime(summary.period.end)} />
-                <Row
-                  label={t('reportDetail.avgSpeed')}
-                  value={`${formatNumber(summary.telemetry.avg_speed ?? 0, 1)} km/h`}
-                />
-                <Row
-                  label={t('reportDetail.avgFuelLevel')}
-                  value={`${formatNumber(summary.telemetry.avg_fuel_level ?? 0, 1)}%`}
-                />
-              </CardContent>
-            </Card>
+            return (
+              <>
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <MetricCard label={t('reportDetail.vehicles')} value={formatNumber(summary.vehicle_count)} />
+                  <MetricCard
+                    label={t('reportDetail.telemetryReadings')}
+                    value={formatNumber(telemetry.total_readings)}
+                  />
+                  <MetricCard
+                    label={t('reportDetail.distanceTraveled')}
+                    value={`${formatNumber(telemetry.distance_traveled_km, 1)} km`}
+                  />
+                  <MetricCard label={t('reportDetail.totalAlerts')} value={formatNumber(alerts.total)} />
+                </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base font-semibold text-foreground">
-                  {t('reportDetail.alertSummary')}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 text-sm">
-                <Row label={t('reportDetail.acknowledged')} value={formatNumber(summary.alerts.acknowledged)} />
-                <Row
-                  label={t('reportDetail.unacknowledged')}
-                  value={formatNumber(summary.alerts.unacknowledged)}
-                />
-                {summary.alerts.avg_acknowledgment_time_seconds !== null && (
-                  <Row
-                    label={t('reportDetail.avgAckTime')}
-                    value={`${formatNumber(summary.alerts.avg_acknowledgment_time_seconds / 60, 1)} min`}
-                  />
-                )}
-                {Object.entries(summary.alerts.by_severity).map(([severity, count]) => (
-                  <Row
-                    key={severity}
-                    label={t('reportDetail.severityCount', {
-                      severity: t(`severity.${severity}` as TranslationKey),
-                    })}
-                    value={formatNumber(count)}
-                  />
-                ))}
-              </CardContent>
-            </Card>
-          </div>
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base font-semibold text-foreground">
+                        {t('reportDetail.telemetrySummary')}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      <Row label={t('reportDetail.periodStart')} value={formatDateTime(summary.period?.start)} />
+                      <Row label={t('reportDetail.periodEnd')} value={formatDateTime(summary.period?.end)} />
+                      <Row
+                        label={t('reportDetail.avgSpeed')}
+                        value={`${formatNumber(telemetry.avg_speed ?? 0, 1)} km/h`}
+                      />
+                      <Row
+                        label={t('reportDetail.avgFuelLevel')}
+                        value={`${formatNumber(telemetry.avg_fuel_level ?? 0, 1)}%`}
+                      />
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-base font-semibold text-foreground">
+                        {t('reportDetail.alertSummary')}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-3 text-sm">
+                      <Row label={t('reportDetail.acknowledged')} value={formatNumber(alerts.acknowledged)} />
+                      <Row label={t('reportDetail.unacknowledged')} value={formatNumber(alerts.unacknowledged)} />
+                      {alerts.avg_acknowledgment_time_seconds !== null &&
+                        alerts.avg_acknowledgment_time_seconds !== undefined && (
+                          <Row
+                            label={t('reportDetail.avgAckTime')}
+                            value={`${formatNumber(alerts.avg_acknowledgment_time_seconds / 60, 1)} min`}
+                          />
+                        )}
+                      {Object.entries(alerts.by_severity ?? {}).map(([severity, count]) => (
+                        <Row
+                          key={severity}
+                          label={t('reportDetail.severityCount', {
+                            severity: t(`severity.${severity}` as TranslationKey),
+                          })}
+                          value={formatNumber(count)}
+                        />
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
+              </>
+            );
+          })()}
         </>
       )}
     </div>
