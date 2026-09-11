@@ -17,11 +17,21 @@ class ReportQuerySerializer(serializers.Serializer):
 
 
 class ReportSerializer(serializers.ModelSerializer):
+    sequence_number = serializers.IntegerField(read_only=True)
+    requested_by_username = serializers.SerializerMethodField()
+    requested_by_role = serializers.SerializerMethodField()
 
     class Meta:
         model = Report
         fields = (
-            'id', 'requested_by', 'vehicle_id', 'period_start', 'period_end',
+            'id', 'sequence_number', 'requested_by', 'requested_by_username', 'requested_by_role',
+            'vehicle_id', 'period_start', 'period_end',
             'status', 'result', 'error_message', 'created_at', 'completed_at',
         )
         read_only_fields = fields
+
+    def get_requested_by_username(self, obj):
+        return obj.requested_by.username if obj.requested_by_id else None
+
+    def get_requested_by_role(self, obj):
+        return obj.requested_by.role if obj.requested_by_id else None
