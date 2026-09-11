@@ -29,14 +29,7 @@ class ReportService:
         return Vehicle.objects.none()
 
     @staticmethod
-    def generate_fleet_summary(user, start_date=None, end_date=None, vehicle_id=None):
-        end_date = end_date or timezone.now()
-        start_date = start_date or (end_date - timedelta(days=DEFAULT_PERIOD_DAYS))
-
-        vehicles = ReportService._scoped_vehicles(user)
-        if vehicle_id:
-            vehicles = vehicles.filter(vehicle_id=vehicle_id)
-
+    def _build_summary(vehicles, start_date, end_date):
         status_counts = {}
         for vehicle_status in vehicles.values_list('status', flat=True):
             status_counts[vehicle_status] = status_counts.get(vehicle_status, 0) + 1
@@ -89,6 +82,17 @@ class ReportService:
                 ),
             },
         }
+
+    @staticmethod
+    def generate_fleet_summary(user, start_date=None, end_date=None, vehicle_id=None):
+        end_date = end_date or timezone.now()
+        start_date = start_date or (end_date - timedelta(days=DEFAULT_PERIOD_DAYS))
+
+        vehicles = ReportService._scoped_vehicles(user)
+        if vehicle_id:
+            vehicles = vehicles.filter(vehicle_id=vehicle_id)
+
+        return ReportService._build_summary(vehicles, start_date, end_date)
 
     @staticmethod
     def create_pending_report(user, start_date=None, end_date=None, vehicle_id=None):
@@ -152,19 +156,7 @@ class ReportService:
         end_date = end_date or timezone.now()
         start_date = start_date or (end_date - timedelta(days=DEFAULT_PERIOD_DAYS))
 
-        vehicles = Vehicle.objects.all()
-        status_counts = {}
-        for vehicle_status in vehicles.values_list('status', flat=True):
-            status_counts[vehicle_status] = status_counts.get(vehicle_status, 0) + 1
-
-        alerts_qs = Alert.objects.filter(created_at__gte=start_date, created_at__lte=end_date)
-
-        return {
-            'period': {'start': start_date.isoformat(), 'end': end_date.isoformat()},
-            'vehicle_count': vehicles.count(),
-            'vehicles_by_status': status_counts,
-            'alerts': {'total': alerts_qs.count()},
-        }
+        return ReportService._build_summary(Vehicle.objects.all(), start_date, end_date)
 
     @staticmethod
     def get_report(user, report_id):
