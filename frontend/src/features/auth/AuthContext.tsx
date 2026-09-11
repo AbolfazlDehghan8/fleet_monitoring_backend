@@ -21,7 +21,7 @@ interface AuthContextValue {
   user: SessionUser | null;
   isAuthenticated: boolean;
   isInitializing: boolean;
-  login: (payload: LoginRequest) => Promise<void>;
+  login: (payload: LoginRequest) => Promise<SessionUser>;
   logout: () => Promise<void>;
   /** Merges a partial profile update (e.g. after editing the account page) into the
    * session user and persisted storage, so the navbar/sidebar reflect it immediately
@@ -101,6 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     tokenStorage.setTokens(response.access_token, response.refresh_token);
     localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(response.user));
     setUser(response.user);
+    return response.user;
   }, []);
 
   const logout = React.useCallback(async () => {

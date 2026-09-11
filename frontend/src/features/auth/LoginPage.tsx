@@ -14,6 +14,7 @@ import { ThemeToggle } from '@/components/shared/ThemeToggle';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { resolveLoginRedirect } from '@/constants/routeAccess';
 import { ApiError } from '@/types/common';
 
 import { useAuth } from './AuthContext';
@@ -47,7 +48,7 @@ export function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) });
 
-  const redirectTo = (location.state as { from?: string } | null)?.from ?? '/';
+  const requestedFrom = (location.state as { from?: string } | null)?.from;
 
   const slides = [
     { icon: Truck, title: t('login.slide1Title'), desc: t('login.slide1Desc') },
@@ -58,7 +59,8 @@ export function LoginPage() {
   async function onSubmit(values: LoginFormValues) {
     setServerError(null);
     try {
-      await login(values);
+      const sessionUser = await login(values);
+      const redirectTo = resolveLoginRedirect(sessionUser.role, requestedFrom);
       navigate(redirectTo, { replace: true });
     } catch (error) {
       if (error instanceof ApiError) {
