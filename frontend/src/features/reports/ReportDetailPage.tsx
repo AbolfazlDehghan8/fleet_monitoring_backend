@@ -1,29 +1,37 @@
-import type * as React from 'react';
+import * as React from 'react';
 
-import { ArrowLeft, Download, Loader2 } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft, Download, Loader2, Trash2 } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { useLanguage } from '@/app/LanguageContext';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { ReportStatusBadge } from '@/components/shared/ReportStatusBadge';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/use-toast';
+import { ROLES } from '@/constants/roles';
+import { useAuth } from '@/features/auth/AuthContext';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
 import { formatDateTime, formatNumber } from '@/utils/formatters';
 
-import { useExportReportCsv, useReport } from './hooks';
+import { useDeleteReport, useExportReportCsv, useReport } from './hooks';
 
 export function ReportDetailPage() {
   const { t } = useLanguage();
+  const navigate = useNavigate();
+  const { user } = useAuth();
   const params = useParams<{ id: string }>();
   const reportId = Number(params.id);
 
   const reportQuery = useReport(reportId);
   const exportMutation = useExportReportCsv();
+  const deleteMutation = useDeleteReport();
+  const [confirmDelete, setConfirmDelete] = React.useState(false);
 
   async function handleExport() {
     try {
@@ -39,6 +47,20 @@ export function ReportDetailPage() {
     } catch (error) {
       toast({
         title: t('reportDetail.exportFailed'),
+        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        variant: 'destructive',
+      });
+    }
+  }
+
+  async function handleDelete() {
+    try {
+      await deleteMutation.mutateAsync(reportId);
+      toast({ title: t('reports.deleted'), variant: 'success' });
+      navigate('/reports');
+    } catch (error) {
+      toast({
+        title: t('reports.failedToDelete'),
         description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
         variant: 'destructive',
       });
@@ -71,7 +93,7 @@ export function ReportDetailPage() {
           </Link>
         </Button>
         <PageHeader
-          title={t('reportDetail.reportNumber', { id: report.id })}
+          title={t('reportDetail.reportNumber', { id: report.sequence_number })}
           description={
             report.vehicle_id
               ? t('reportDetail.scopedTo', { vehicle: report.vehicle_id })
@@ -79,6 +101,15 @@ export function ReportDetailPage() {
           }
           actions={
             <div className="flex items-center gap-2">
+              {user?.role === ROLES.ADMIN &&
+                (report.requested_by === null ? (
+                  <Badge variant="muted">{t('reports.requesterSystem')}</Badge>
+                ) : report.requested_by !== user?.id ? (
+                  <Badge variant="outline">
+                    {report.requested_by_username}
+                    {report.requested_by_role ? ` · ${t(`role.${report.requested_by_role}` as TranslationKey)}` : ''}
+                  </Badge>
+                ) : null)}
               <ReportStatusBadge status={report.status} />
               {report.status === 'completed' && (
                 <Button
@@ -95,10 +126,30 @@ export function ReportDetailPage() {
                   {t('reportDetail.exportCsv')}
                 </Button>
               )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => setConfirmDelete(true)}
+              >
+                <Trash2 className="size-4" />
+                {t('common.delete')}
+              </Button>
             </div>
           }
         />
       </div>
+
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={t('reports.deleteTitle')}
+        description={t('reports.deleteDesc')}
+        confirmLabel={t('common.delete')}
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => void handleDelete()}
+      />
 
       {(report.status === 'pending' || report.status === 'running') && (
         <Card>

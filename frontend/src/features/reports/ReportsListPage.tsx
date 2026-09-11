@@ -1,24 +1,52 @@
-import { FileBarChart, Plus } from 'lucide-react';
+import * as React from 'react';
+import { FileBarChart, Plus, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { useLanguage } from '@/app/LanguageContext';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { ReportStatusBadge } from '@/components/shared/ReportStatusBadge';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/components/ui/use-toast';
+import { ROLES } from '@/constants/roles';
+import { useAuth } from '@/features/auth/AuthContext';
+import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
 import type { Report } from '@/types/reports';
 import { formatDateTime } from '@/utils/formatters';
 
-import { useGenerateReport, useReports } from './hooks';
+import { useDeleteReport, useGenerateReport, useReports } from './hooks';
+
+type RequesterFilter = 'all' | 'mine' | 'managers' | 'system';
 
 export function ReportsListPage() {
   const { t } = useLanguage();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const reportsQuery = useReports();
   const generateMutation = useGenerateReport();
+  const deleteMutation = useDeleteReport();
+
+  const [pendingDeleteId, setPendingDeleteId] = React.useState<number | null>(null);
+  const [requesterFilter, setRequesterFilter] = React.useState<RequesterFilter>('all');
+
+  // Admin sees every report (their own + every fleet manager's + scheduled system
+  // reports) in one list — the filter and "Requested by" column keep those visually
+  // and functionally separate instead of one big mixed pile. Fleet managers only ever
+  // see their own reports anyway, so neither is shown to them.
+  const isAdmin = user?.role === ROLES.ADMIN;
+
+  const filteredReports = React.useMemo(() => {
+    const data = reportsQuery.data ?? [];
+    if (!isAdmin || requesterFilter === 'all') return data;
+    if (requesterFilter === 'mine') return data.filter((r) => r.requested_by === user?.id);
+    if (requesterFilter === 'managers') return data.filter((r) => r.requested_by_role === 'fleet_manager');
+    return data.filter((r) => r.requested_by === null);
+  }, [reportsQuery.data, requesterFilter, isAdmin, user?.id]);
 
   async function handleGenerate() {
     try {
@@ -34,13 +62,53 @@ export function ReportsListPage() {
     }
   }
 
+  async function handleDelete() {
+    if (pendingDeleteId === null) return;
+    try {
+      await deleteMutation.mutateAsync(pendingDeleteId);
+      toast({ title: t('reports.deleted'), variant: 'success' });
+      setPendingDeleteId(null);
+    } catch (error) {
+      toast({
+        title: t('reports.failedToDelete'),
+        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        variant: 'destructive',
+      });
+    }
+  }
+
   const columns: DataTableColumn<Report>[] = [
     {
-      id: 'id',
+      id: 'sequence_number',
       header: t('reports.colReport'),
-      sortAccessor: (row) => row.id,
-      cell: (row) => <span className="font-mono text-sm">#{row.id}</span>,
+      sortAccessor: (row) => row.sequence_number,
+      cell: (row) => <span className="font-mono text-sm">#{row.sequence_number}</span>,
     },
+    ...(isAdmin
+      ? [
+          {
+            id: 'requested_by',
+            header: t('reports.colRequestedBy'),
+            sortAccessor: (row) => row.requested_by_username ?? '',
+            cell: (row) => {
+              if (row.requested_by === null) {
+                return <Badge variant="muted">{t('reports.requesterSystem')}</Badge>;
+              }
+              if (row.requested_by === user?.id) {
+                return <Badge>{t('reports.requesterMe')}</Badge>;
+              }
+              return (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-sm">{row.requested_by_username}</span>
+                  {row.requested_by_role && (
+                    <Badge variant="outline">{t(`role.${row.requested_by_role}` as TranslationKey)}</Badge>
+                  )}
+                </div>
+              );
+            },
+          } satisfies DataTableColumn<Report>,
+        ]
+      : []),
     {
       id: 'vehicle_id',
       header: t('reports.colScope'),
@@ -70,6 +138,24 @@ export function ReportsListPage() {
       sortAccessor: (row) => new Date(row.created_at).getTime(),
       cell: (row) => <span className="text-sm text-muted-foreground">{formatDateTime(row.created_at)}</span>,
     },
+    {
+      id: 'actions',
+      header: '',
+      cell: (row) => (
+        <Button
+          size="icon"
+          variant="ghost"
+          className="text-muted-foreground hover:text-destructive"
+          onClick={(e) => {
+            e.stopPropagation();
+            setPendingDeleteId(row.id);
+          }}
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      ),
+      className: 'text-end',
+    },
   ];
 
   return (
@@ -85,12 +171,29 @@ export function ReportsListPage() {
         }
       />
 
+      {isAdmin && (
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-muted-foreground">{t('reports.filterByRequester')}</span>
+          <Select value={requesterFilter} onValueChange={(v) => setRequesterFilter(v as RequesterFilter)}>
+            <SelectTrigger className="w-56">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t('reports.filterAll')}</SelectItem>
+              <SelectItem value="mine">{t('reports.filterMine')}</SelectItem>
+              <SelectItem value="managers">{t('reports.filterManagers')}</SelectItem>
+              <SelectItem value="system">{t('reports.filterSystem')}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+
       {reportsQuery.isError ? (
         <ErrorState onRetry={() => void reportsQuery.refetch()} />
       ) : (
         <DataTable
           columns={columns}
-          data={reportsQuery.data ?? []}
+          data={filteredReports}
           getRowId={(row) => row.id}
           isLoading={reportsQuery.isLoading}
           onRowClick={(row) => navigate(`/reports/${row.id}`)}
@@ -99,6 +202,17 @@ export function ReportsListPage() {
           emptyIcon={FileBarChart}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingDeleteId !== null}
+        onOpenChange={(open) => !open && setPendingDeleteId(null)}
+        title={t('reports.deleteTitle')}
+        description={t('reports.deleteDesc')}
+        confirmLabel={t('common.delete')}
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => void handleDelete()}
+      />
     </div>
   );
 }

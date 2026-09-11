@@ -21,4 +21,6 @@ export const reportsApi = {
     apiClient
       .get<Blob>(`/reports/${reportId}/export/`, { responseType: 'blob' })
       .then((r) => r.data),
+
+  remove: (reportId: number) => apiClient.delete<void>(`/reports/${reportId}/`).then((r) => r.data),
 };

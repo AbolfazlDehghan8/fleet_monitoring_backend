@@ -44,3 +44,11 @@ export function useExportReportCsv() {
     mutationFn: (reportId: number) => reportsApi.exportCsv(reportId),
   });
 }
+
+export function useDeleteReport() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (reportId: number) => reportsApi.remove(reportId),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all }),
+  });
+}
