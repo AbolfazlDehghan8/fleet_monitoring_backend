@@ -57,6 +57,7 @@ class ReportGenerateView(APIView):
             end_date=data.get('end_date'),
             vehicle_id=data.get('vehicle_id'),
         )
+        ReportService.attach_sequence_number(request.user, report)
         return Response(ReportSerializer(report).data, status=status.HTTP_202_ACCEPTED)
 
 
@@ -67,6 +68,7 @@ class ReportListView(APIView):
     @extend_schema(responses={200: ReportSerializer(many=True)}, summary='List generated reports')
     def get(self, request):
         reports = ReportService.list_reports(request.user)
+        reports = ReportService.attach_sequence_numbers(request.user, reports)
         return Response(ReportSerializer(reports, many=True).data, status=status.HTTP_200_OK)
 
 
@@ -87,7 +89,28 @@ class ReportDetailView(APIView):
         if report is None:
             return Response({'detail': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
 
+        ReportService.attach_sequence_number(request.user, report)
         return Response(ReportSerializer(report).data, status=status.HTTP_200_OK)
+
+    @extend_schema(
+        responses={204: None, 403: 'Forbidden', 404: 'Not Found'},
+        summary='Delete a report',
+        description=(
+            'Admins may delete any report; fleet managers may only delete reports they '
+            'requested themselves. Remaining reports are renumbered so sequence_number '
+            'stays gap-free.'
+        ),
+    )
+    def delete(self, request, report_id):
+        try:
+            deleted = ReportService.delete_report(request.user, report_id)
+        except PermissionDenied as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+        if deleted is None:
+            return Response({'detail': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ReportExportView(APIView):
@@ -113,7 +136,8 @@ class ReportExportView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        ReportService.attach_sequence_number(request.user, report)
         csv_bytes = ReportService.to_csv(report)
         response = HttpResponse(csv_bytes, content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="report-{report.id}.csv"'
+        response['Content-Disposition'] = f'attachment; filename="report-{report.sequence_number}.csv"'
         return response
