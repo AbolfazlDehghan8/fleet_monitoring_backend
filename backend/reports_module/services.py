@@ -171,10 +171,49 @@ class ReportService:
         return report
 
     @staticmethod
-    def list_reports(user):
+    def _report_scope(user):
+        base = Report.objects.select_related('requested_by')
         if user.is_admin:
-            return Report.objects.all()[:200]
-        return Report.objects.filter(requested_by=user)[:200]
+            return base
+        return base.filter(requested_by=user)
+
+    @staticmethod
+    def attach_sequence_number(user, report):
+        report.sequence_number = ReportService._report_scope(user).filter(id__lte=report.id).count()
+        return report
+
+    @staticmethod
+    def attach_sequence_numbers(user, reports):
+        reports = list(reports)
+        if not reports:
+            return reports
+
+        ordered_ids = ReportService._report_scope(user).order_by('id').values_list('id', flat=True)
+        sequence_by_id = {report_id: index + 1 for index, report_id in enumerate(ordered_ids)}
+        for report in reports:
+            report.sequence_number = sequence_by_id.get(report.id)
+        return reports
+
+    @staticmethod
+    def delete_report(user, report_id):
+        try:
+            report = Report.objects.get(id=report_id)
+        except Report.DoesNotExist:
+            return None
+
+        if not user.is_admin and report.requested_by_id != user.id:
+            raise PermissionDenied('This report was not requested by you')
+
+        report.delete()
+        audit_logger.info(
+            'report_deleted',
+            extra={'actor': user.id if user else 'system', 'action': 'delete_report', 'target': str(report_id)},
+        )
+        return True
+
+    @staticmethod
+    def list_reports(user):
+        return ReportService._report_scope(user).order_by('-created_at')[:200]
 
     @staticmethod
     def to_csv(report):
