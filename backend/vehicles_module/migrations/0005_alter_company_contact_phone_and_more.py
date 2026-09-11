@@ -1,5 +1,58 @@
+import re
+
 import django.core.validators
 from django.db import migrations, models
+
+
+def _normalize_phone(raw, max_len):
+    """Best-effort cleanup so old free-form numbers fit the new column size."""
+    if not raw:
+        return raw
+    value = re.sub(r'[\s\-()]', '', raw)
+    if value.startswith('+98'):
+        value = '0' + value[3:]
+    elif value.startswith('0098'):
+        value = '0' + value[4:]
+    elif value.startswith('98') and len(value) > 10:
+        value = '0' + value[2:]
+    # Still too long for the new column? Truncate as a last resort so the
+    # migration can run; these rows should be reviewed manually afterwards.
+    return value[:max_len]
+
+
+def _normalize_plate(raw, max_len):
+    if not raw:
+        return raw
+    value = re.sub(r'[\s\-]', '', raw)
+    return value[:max_len]
+
+
+def normalize_existing_data(apps, schema_editor):
+    Company = apps.get_model('vehicles_module', 'Company')
+    Driver = apps.get_model('vehicles_module', 'Driver')
+    Vehicle = apps.get_model('vehicles_module', 'Vehicle')
+
+    for company in Company.objects.exclude(contact_phone=''):
+        cleaned = _normalize_phone(company.contact_phone, 11)
+        if cleaned != company.contact_phone:
+            company.contact_phone = cleaned
+            company.save(update_fields=['contact_phone'])
+
+    for driver in Driver.objects.exclude(phone_number=''):
+        cleaned = _normalize_phone(driver.phone_number, 11)
+        if cleaned != driver.phone_number:
+            driver.phone_number = cleaned
+            driver.save(update_fields=['phone_number'])
+
+    for vehicle in Vehicle.objects.all():
+        cleaned = _normalize_plate(vehicle.license_plate, 8)
+        if cleaned != vehicle.license_plate:
+            vehicle.license_plate = cleaned
+            vehicle.save(update_fields=['license_plate'])
+
+
+def noop_reverse(apps, schema_editor):
+    pass
 
 
 class Migration(migrations.Migration):
@@ -9,6 +62,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        migrations.RunPython(normalize_existing_data, noop_reverse),
         migrations.AlterField(
             model_name='company',
             name='contact_phone',
