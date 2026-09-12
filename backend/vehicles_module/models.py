@@ -2,6 +2,12 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from fleet_monitoring.validators import (
+    iran_mobile_validator,
+    iran_phone_validator,
+    iran_plate_validator,
+)
+
 
 class Company(models.Model):
 
@@ -9,7 +15,9 @@ class Company(models.Model):
     registration_number = models.CharField(max_length=50, blank=True)
     address = models.CharField(max_length=255, blank=True)
     contact_email = models.EmailField(blank=True)
-    contact_phone = models.CharField(max_length=20, blank=True)
+    contact_phone = models.CharField(
+        max_length=11, blank=True, validators=[iran_phone_validator]
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -30,7 +38,9 @@ class Driver(models.Model):
         related_name='driver_profile',
     )
     license_number = models.CharField(max_length=50, unique=True)
-    phone_number = models.CharField(max_length=20, blank=True)
+    phone_number = models.CharField(
+        max_length=11, blank=True, validators=[iran_mobile_validator]
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -61,7 +71,9 @@ class Vehicle(models.Model):
         Company, on_delete=models.PROTECT, related_name='vehicles',
     )
 
-    license_plate = models.CharField(max_length=20, unique=True)
+    license_plate = models.CharField(
+        max_length=8, unique=True, validators=[iran_plate_validator]
+    )
     vin = models.CharField(max_length=17, unique=True, null=True, blank=True)
     make = models.CharField(max_length=50, blank=True)
     model = models.CharField(max_length=50, blank=True)
