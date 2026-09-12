@@ -1,6 +1,11 @@
 from rest_framework import serializers
 
 from auth_module.models import User
+from fleet_monitoring.validators import (
+    iran_mobile_validator,
+    iran_phone_validator,
+    iran_plate_validator,
+)
 
 from .models import OBU, Company, Driver, Vehicle
 
@@ -38,7 +43,9 @@ class LinkableUserSerializer(serializers.ModelSerializer):
 class DriverCreateSerializer(serializers.Serializer):
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='driver'))
     license_number = serializers.CharField(max_length=50)
-    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    phone_number = serializers.CharField(
+        max_length=11, required=False, allow_blank=True, validators=[iran_mobile_validator]
+    )
 
     def validate_user(self, user):
         if Driver.objects.filter(user=user).exists():
@@ -48,7 +55,9 @@ class DriverCreateSerializer(serializers.Serializer):
 
 class DriverUpdateSerializer(serializers.Serializer):
     license_number = serializers.CharField(max_length=50, required=False)
-    phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    phone_number = serializers.CharField(
+        max_length=11, required=False, allow_blank=True, validators=[iran_mobile_validator]
+    )
     is_active = serializers.BooleanField(required=False)
 
 
@@ -71,7 +80,7 @@ class VehicleSerializer(serializers.ModelSerializer):
 
 class VehicleCreateSerializer(serializers.Serializer):
     vehicle_id = serializers.CharField(max_length=50)
-    license_plate = serializers.CharField(max_length=20)
+    license_plate = serializers.CharField(max_length=8, validators=[iran_plate_validator])
     vin = serializers.CharField(max_length=17, required=False, allow_null=True, allow_blank=True)
     make = serializers.CharField(max_length=50, required=False, allow_blank=True)
     model = serializers.CharField(max_length=50, required=False, allow_blank=True)
@@ -84,8 +93,9 @@ class VehicleCreateSerializer(serializers.Serializer):
     obu_serial_number = serializers.CharField(max_length=50, required=False)
     obu_firmware_version = serializers.CharField(max_length=20, required=False, allow_blank=True)
 
+
 class VehicleAdminUpdateSerializer(serializers.Serializer):
-    license_plate = serializers.CharField(max_length=20, required=False)
+    license_plate = serializers.CharField(max_length=8, required=False, validators=[iran_plate_validator])
     vin = serializers.CharField(max_length=17, required=False, allow_null=True, allow_blank=True)
     make = serializers.CharField(max_length=50, required=False, allow_blank=True)
     model = serializers.CharField(max_length=50, required=False, allow_blank=True)
@@ -100,7 +110,7 @@ class VehicleAdminUpdateSerializer(serializers.Serializer):
 
 
 class VehicleManagerUpdateSerializer(serializers.Serializer):
-    license_plate = serializers.CharField(max_length=20, required=False)
+    license_plate = serializers.CharField(max_length=8, required=False, validators=[iran_plate_validator])
     vin = serializers.CharField(max_length=17, required=False, allow_null=True, allow_blank=True)
     make = serializers.CharField(max_length=50, required=False, allow_blank=True)
     model = serializers.CharField(max_length=50, required=False, allow_blank=True)
@@ -109,6 +119,7 @@ class VehicleManagerUpdateSerializer(serializers.Serializer):
     driver = serializers.PrimaryKeyRelatedField(queryset=Driver.objects.all(), required=False, allow_null=True)
     obu_serial_number = serializers.CharField(max_length=50, required=False)
     obu_firmware_version = serializers.CharField(max_length=20, required=False, allow_blank=True)
+
 
 class CompanySerializer(serializers.ModelSerializer):
     class Meta:
@@ -125,4 +136,6 @@ class CompanyUpdateSerializer(serializers.Serializer):
     registration_number = serializers.CharField(max_length=50, required=False, allow_blank=True)
     address = serializers.CharField(max_length=255, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
-    contact_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    contact_phone = serializers.CharField(
+        max_length=11, required=False, allow_blank=True, validators=[iran_phone_validator]
+    )
