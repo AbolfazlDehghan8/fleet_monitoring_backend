@@ -20,6 +20,7 @@ import { VEHICLE_STATUSES } from '@/constants/statuses';
 import { useAuth } from '@/features/auth/AuthContext';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
+import { IRAN_PLATE_REGEX } from '@/utils/iranValidators';
 
 import { useAssignableDrivers, useCreateVehicle, useUpdateVehicle, useVehicle } from './hooks';
 
@@ -28,7 +29,11 @@ const NONE = '__none__';
 function useVehicleSchema(t: (key: TranslationKey) => string) {
   return z.object({
     vehicle_id: z.string().min(1, t('vehicleForm.vehicleIdErr')).max(50),
-    license_plate: z.string().min(1, t('vehicleForm.licensePlateErr')).max(20),
+    license_plate: z
+      .string()
+      .min(1, t('vehicleForm.licensePlateErr'))
+      .max(8)
+      .regex(IRAN_PLATE_REGEX, t('vehicleForm.licensePlateFormatErr')),
     vin: z.string().max(17).optional().or(z.literal('')),
     make: z.string().max(50).optional().or(z.literal('')),
     model: z.string().max(50).optional().or(z.literal('')),
@@ -213,7 +218,13 @@ export function VehicleFormPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="license_plate">{t('vehicleForm.licensePlate')}</Label>
-                <Input id="license_plate" placeholder="ABC-1234" {...register('license_plate')} />
+                <Input
+                  id="license_plate"
+                  placeholder="12ب34567"
+                  maxLength={8}
+                  dir="ltr"
+                  {...register('license_plate')}
+                />
                 {errors.license_plate && (
                   <p className="text-xs text-destructive">{errors.license_plate.message}</p>
                 )}

@@ -22,17 +22,25 @@ import {
 } from '@/features/vehicles/hooks';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
+import { IRAN_MOBILE_REGEX } from '@/utils/iranValidators';
 
 function useSchemas(t: (key: TranslationKey) => string) {
+  const phoneField = z
+    .string()
+    .max(11)
+    .regex(IRAN_MOBILE_REGEX, t('driverForm.phoneNumberErr'))
+    .optional()
+    .or(z.literal(''));
+
   const createSchema = z.object({
     user: z.string().min(1, t('driverForm.userRequired')),
     license_number: z.string().min(1, t('driverForm.licenseRequired')).max(50),
-    phone_number: z.string().max(20).optional().or(z.literal('')),
+    phone_number: phoneField,
   });
 
   const editSchema = z.object({
     license_number: z.string().min(1, t('driverForm.licenseRequired')).max(50),
-    phone_number: z.string().max(20).optional().or(z.literal('')),
+    phone_number: phoneField,
     is_active: z.boolean(),
   });
 
@@ -147,7 +155,17 @@ export function DriverFormPage() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="phone_number">{t('driverForm.phoneNumber')}</Label>
-                <Input id="phone_number" placeholder="+1 555 0100" {...editForm.register('phone_number')} />
+                <Input
+                  id="phone_number"
+                  placeholder="09123456789"
+                  maxLength={11}
+                  inputMode="numeric"
+                  dir="ltr"
+                  {...editForm.register('phone_number')}
+                />
+                {editForm.formState.errors.phone_number && (
+                  <p className="text-xs text-destructive">{editForm.formState.errors.phone_number.message}</p>
+                )}
               </div>
               <div className="flex items-center justify-between rounded-md border border-input px-3 py-2">
                 <Label htmlFor="is_active" className="cursor-pointer">
@@ -227,7 +245,17 @@ export function DriverFormPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="phone_number">{t('driverForm.phoneNumber')}</Label>
-                <Input id="phone_number" placeholder="+1 555 0100" {...createForm.register('phone_number')} />
+                <Input
+                  id="phone_number"
+                  placeholder="09123456789"
+                  maxLength={11}
+                  inputMode="numeric"
+                  dir="ltr"
+                  {...createForm.register('phone_number')}
+                />
+                {createForm.formState.errors.phone_number && (
+                  <p className="text-xs text-destructive">{createForm.formState.errors.phone_number.message}</p>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
