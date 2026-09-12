@@ -829,7 +829,7 @@ const fa: Record<keyof typeof en, string> = {
   'reports.noReports': 'هنوز گزارشی ایجاد نشده',
   'reports.noReportsDesc': 'اولین گزارش خلاصه ناوگان خود را ایجاد کنید.',
   'reports.deleteTitle': 'این گزارش حذف شود؟',
-  'reports.deleteDesc': 'این عملیات قابل بازگشت نیست. شماره‌ی سایر گزارش‌ها برای جلوگیری از افتادگی، جابه‌جا می‌شود.',
+  'reports.deleteDesc': 'این عملیات قابل بازگشت نیست و این گزارش حذف میشود.',
   'reports.deleted': 'گزارش حذف شد',
   'reports.failedToDelete': 'حذف گزارش ناموفق بود',
 
