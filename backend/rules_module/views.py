@@ -70,7 +70,7 @@ class RuleDetailView(APIView):
         except Rule.DoesNotExist:
             return Response({'detail': 'Rule not found'}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = RuleWriteSerializer(data=request.data, partial=True)
+        serializer = RuleWriteSerializer(instance=rule, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
         try:
