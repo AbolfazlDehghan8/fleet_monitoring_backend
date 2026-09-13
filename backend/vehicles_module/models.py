@@ -6,6 +6,8 @@ from fleet_monitoring.validators import (
     iran_mobile_validator,
     iran_phone_validator,
     iran_plate_validator,
+    obu_serial_validator,
+    vin_validator,
 )
 
 
@@ -74,7 +76,9 @@ class Vehicle(models.Model):
     license_plate = models.CharField(
         max_length=8, unique=True, validators=[iran_plate_validator]
     )
-    vin = models.CharField(max_length=17, unique=True, null=True, blank=True)
+    vin = models.CharField(
+        max_length=17, unique=True, null=True, blank=True, validators=[vin_validator]
+    )
     make = models.CharField(max_length=50, blank=True)
     model = models.CharField(max_length=50, blank=True)
     year = models.PositiveIntegerField(null=True, blank=True)
@@ -118,7 +122,7 @@ class Vehicle(models.Model):
 class OBU(models.Model):
 
     vehicle = models.OneToOneField(Vehicle, on_delete=models.CASCADE, related_name='obu')
-    serial_number = models.CharField(max_length=50, unique=True)
+    serial_number = models.CharField(max_length=50, unique=True, validators=[obu_serial_validator])
     firmware_version = models.CharField(max_length=20, blank=True)
     is_active = models.BooleanField(default=True)
     installed_at = models.DateTimeField(auto_now_add=True)
