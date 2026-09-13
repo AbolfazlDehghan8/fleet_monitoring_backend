@@ -188,19 +188,31 @@ const en = {
   'vehicleForm.licensePlateErr': 'License plate is required',
   'vehicleForm.licensePlateFormatErr': 'Enter a valid Iranian plate: 2 digits + a Persian letter + 3 digits + 2 digits, e.g. 12ب34567',
   'vehicleForm.vin': 'VIN',
+  'vehicleForm.vinErr': 'Enter a valid 17-character VIN (letters and digits, no I, O, or Q)',
   'vehicleForm.make': 'Make',
   'vehicleForm.model': 'Model',
   'vehicleForm.year': 'Year',
+  'vehicleForm.yearErr': 'Enter a valid year',
   'vehicleForm.driver': 'Driver',
   'vehicleForm.unassigned': 'Unassigned',
   'vehicleForm.assignedManager': 'Assigned Manager',
   'vehicleForm.obuSerial': 'OBU Serial Number',
+  'vehicleForm.obuSerialErr': 'Enter a valid OBU serial number, e.g. OBU-2026-0001',
   'vehicleForm.obuFirmware': 'OBU Firmware Version',
   'vehicleForm.saveChanges': 'Save Changes',
   'vehicleForm.createVehicle': 'Create Vehicle',
   'vehicleForm.vehicleUpdated': 'Vehicle updated',
   'vehicleForm.vehicleCreated': 'Vehicle created',
   'vehicleForm.couldNotSave': 'Could not save vehicle',
+
+  // Placeholders (locale-specific example text)
+  'vehicleForm.vehicleIdPlaceholder': 'veh_0001',
+  'vehicleForm.vinPlaceholder': '1HGCM82633A004352',
+  'vehicleForm.makePlaceholder': 'Ford',
+  'vehicleForm.modelPlaceholder': 'Transit',
+  'vehicleForm.yearPlaceholder': '2023',
+  'vehicleForm.obuSerialPlaceholder': 'OBU-2026-0001',
+  'vehicleForm.obuFirmwarePlaceholder': '1.4.2',
 
   // Drivers
   'drivers.title': 'Drivers',
@@ -472,6 +484,30 @@ const en = {
   'ruleMetric.battery_voltage': 'Battery Voltage (V)',
   'ruleMetric.fuel_level': 'Fuel Level (%)',
   'ruleMetric.odometer': 'Odometer (km)',
+
+  // Profile
+  'profile.title': 'Profile',
+  'profile.subtitle': 'Manage your account information and password.',
+  'profile.memberSince': 'Member since',
+  'profile.tabAccount': 'Account',
+  'profile.tabPassword': 'Password',
+  'profile.username': 'Username',
+  'profile.usernameNote': 'Your username cannot be changed after account creation.',
+  'profile.saveChanges': 'Save changes',
+  'profile.currentPassword': 'Current password',
+  'profile.newPassword': 'New password',
+  'profile.confirmNewPassword': 'Confirm new password',
+  'profile.changePassword': 'Change password',
+  'profile.loadFailed': 'Unable to load profile',
+  'profile.updated': 'Profile updated',
+  'profile.couldNotUpdate': 'Could not update profile',
+  'profile.passwordChanged': 'Password changed',
+  'profile.couldNotChangePassword': 'Could not change password',
+  'profile.errorCurrentRequired': 'Current password is required',
+
+  // Driver form — supplemental keys
+  'driverForm.loadingUsers': 'Loading users…',
+  'driverForm.noLinkableUsers': 'No unlinked driver-role users found',
 } as const;
 
 const fa: Record<keyof typeof en, string> = {
@@ -648,19 +684,31 @@ const fa: Record<keyof typeof en, string> = {
   'vehicleForm.licensePlateErr': 'پلاک الزامی است',
   'vehicleForm.licensePlateFormatErr': 'پلاک را با فرمت صحیح ایران وارد کنید: ۲ رقم + حرف فارسی + ۳ رقم + ۲ رقم، مثال: 12ب34567',
   'vehicleForm.vin': 'شماره شاسی (VIN)',
+  'vehicleForm.vinErr': 'شماره شاسی باید ۱۷ کاراکتر شامل حروف انگلیسی و اعداد باشد (بدون I، O یا Q)',
   'vehicleForm.make': 'سازنده',
   'vehicleForm.model': 'مدل',
-  'vehicleForm.year': 'سال ساخت',
+  'vehicleForm.year': 'سال ساخت (شمسی)',
+  'vehicleForm.yearErr': 'سال معتبر وارد کنید',
   'vehicleForm.driver': 'راننده',
   'vehicleForm.unassigned': 'تخصیص‌نیافته',
   'vehicleForm.assignedManager': 'مدیر ناوگان تخصیص‌یافته',
   'vehicleForm.obuSerial': 'شماره سریال OBU',
+  'vehicleForm.obuSerialErr': 'شماره سریال OBU را با فرمت صحیح وارد کنید، مثال: OBU-2026-0001',
   'vehicleForm.obuFirmware': 'نسخه فریمور OBU',
   'vehicleForm.saveChanges': 'ذخیره تغییرات',
   'vehicleForm.createVehicle': 'ایجاد خودرو',
   'vehicleForm.vehicleUpdated': 'خودرو به‌روزرسانی شد',
   'vehicleForm.vehicleCreated': 'خودرو ایجاد شد',
   'vehicleForm.couldNotSave': 'ذخیره خودرو ممکن نشد',
+
+  // پلیس‌هولدرها (متن نمونه مخصوص هر زبان)
+  'vehicleForm.vehicleIdPlaceholder': 'veh_0001',
+  'vehicleForm.vinPlaceholder': '1HGCM82633A004352',
+  'vehicleForm.makePlaceholder': 'ایران‌خودرو',
+  'vehicleForm.modelPlaceholder': 'سمند',
+  'vehicleForm.yearPlaceholder': '۱۴۰۲',
+  'vehicleForm.obuSerialPlaceholder': 'OBU-2026-0001',
+  'vehicleForm.obuFirmwarePlaceholder': '1.4.2',
 
   'drivers.title': 'رانندگان',
   'drivers.description': 'مدیریت پروفایل رانندگان، گواهینامه‌ها و تخصیص خودرو.',
@@ -920,6 +968,30 @@ const fa: Record<keyof typeof en, string> = {
   'ruleMetric.battery_voltage': 'ولتاژ باتری (ولت)',
   'ruleMetric.fuel_level': 'سطح سوخت (درصد)',
   'ruleMetric.odometer': 'کیلومتر طی‌شده (کیلومتر)',
+
+  // پروفایل کاربر
+  'profile.title': 'پروفایل کاربری',
+  'profile.subtitle': 'اطلاعات حساب و رمز عبور خود را مدیریت کنید.',
+  'profile.memberSince': 'عضویت از',
+  'profile.tabAccount': 'حساب کاربری',
+  'profile.tabPassword': 'رمز عبور',
+  'profile.username': 'نام کاربری',
+  'profile.usernameNote': 'نام کاربری پس از ایجاد حساب قابل تغییر نیست.',
+  'profile.saveChanges': 'ذخیره تغییرات',
+  'profile.currentPassword': 'رمز عبور فعلی',
+  'profile.newPassword': 'رمز عبور جدید',
+  'profile.confirmNewPassword': 'تکرار رمز عبور جدید',
+  'profile.changePassword': 'تغییر رمز عبور',
+  'profile.loadFailed': 'دریافت اطلاعات پروفایل ممکن نشد',
+  'profile.updated': 'پروفایل به‌روزرسانی شد',
+  'profile.couldNotUpdate': 'به‌روزرسانی پروفایل ممکن نشد',
+  'profile.passwordChanged': 'رمز عبور تغییر کرد',
+  'profile.couldNotChangePassword': 'تغییر رمز عبور ممکن نشد',
+  'profile.errorCurrentRequired': 'رمز عبور فعلی الزامی است',
+
+  // فرم راننده — کلیدهای تکمیلی
+  'driverForm.loadingUsers': 'در حال بارگذاری کاربران…',
+  'driverForm.noLinkableUsers': 'کاربر راننده‌ای بدون پروفایل یافت نشد',
 };
 
 export const translations = { en, fa } as const;

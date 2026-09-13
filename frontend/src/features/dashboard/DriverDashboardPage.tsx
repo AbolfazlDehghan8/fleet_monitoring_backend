@@ -22,6 +22,7 @@ import {
   formatRelativeTime,
   formatSpeed,
   formatTemperature,
+  formatVehicleYear,
   formatVoltage,
 } from '@/utils/formatters';
 
@@ -95,7 +96,7 @@ function MyAlertsList({ alerts }: { alerts: Alert[] }) {
 }
 
 function MyVehicleCard({ vehicle }: { vehicle: Vehicle }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const statusQuery = useVehicleStatus(vehicle.id);
   const live = statusQuery.data?.live_telemetry;
   const na = t('common.notAvailable');
@@ -110,7 +111,7 @@ function MyVehicleCard({ vehicle }: { vehicle: Vehicle }) {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          {vehicle.make} {vehicle.model} {vehicle.year ? `(${vehicle.year})` : ''} · {vehicle.license_plate}
+          {vehicle.make} {vehicle.model} {formatVehicleYear(vehicle.year, language) ? `(${formatVehicleYear(vehicle.year, language)})` : ''} · {vehicle.license_plate}
         </p>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

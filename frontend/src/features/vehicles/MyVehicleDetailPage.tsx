@@ -24,6 +24,7 @@ import {
   formatRelativeTime,
   formatSpeed,
   formatTemperature,
+  formatVehicleYear,
   formatVoltage,
 } from '@/utils/formatters';
 
@@ -84,7 +85,7 @@ function MyVehicleDetailContent({
   vehicleSummary: Vehicle;
   na: string;
 }) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const statusQuery = useVehicleStatus(vehicleId);
   const telemetryQuery = useMyTelemetry();
   const alertsQuery = useMyAlerts();
@@ -105,7 +106,7 @@ function MyVehicleDetailContent({
         </Button>
         <PageHeader
           title={vehicle.vehicle_id}
-          description={`${vehicle.make} ${vehicle.model} ${vehicle.year ? `(${vehicle.year})` : ''} · ${vehicle.license_plate}`}
+          description={`${vehicle.make} ${vehicle.model} ${formatVehicleYear(vehicle.year, language) ? `(${formatVehicleYear(vehicle.year, language)})` : ''} · ${vehicle.license_plate}`}
           actions={<StatusBadge status={vehicle.status} className="text-sm" />}
         />
       </div>

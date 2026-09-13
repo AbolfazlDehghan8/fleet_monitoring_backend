@@ -1,5 +1,7 @@
 import { format, formatDistanceToNow, parseISO } from 'date-fns';
 
+import { gregorianYearToJalali } from './jalali';
+
 /** Safely parse a value that might already be a Date or an ISO string. */
 function toDate(value: string | Date): Date {
   return typeof value === 'string' ? parseISO(value) : value;
@@ -61,6 +63,21 @@ export function formatVoltage(value: number | null | undefined): string {
 
 export function formatOdometer(value: number | null | undefined): string {
   return value === null || value === undefined ? '—' : `${formatNumber(value, 0)} km`;
+}
+
+/**
+ * Format a vehicle's (Gregorian) manufacture year for display: converted to
+ * Shamsi in the Persian UI, left as-is in English. Mirrors the conversion
+ * used in the vehicle create/edit form so the same vehicle shows the same
+ * year everywhere in a given language.
+ */
+export function formatVehicleYear(
+  year: number | null | undefined,
+  language: 'en' | 'fa',
+): string | null {
+  if (year === null || year === undefined) return null;
+  const displayYear = language === 'fa' ? gregorianYearToJalali(year) : year;
+  return String(displayYear);
 }
 
 export function formatDuration(seconds: number | null | undefined): string {

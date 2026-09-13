@@ -53,11 +53,6 @@ export function Navbar({ onMenuClick }: { onMenuClick: () => void }) {
                 <p className="text-xs font-normal text-muted-foreground">{t(`role.${user.role}`)}</p>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem disabled>
-                <UserIcon className="size-4" />
-                {user.email}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
               <DropdownMenuItem asChild>
                 <Link to="/profile">
                   <UserIcon className="size-4" />

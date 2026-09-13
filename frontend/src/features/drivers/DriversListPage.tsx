@@ -59,9 +59,7 @@ export function DriversListPage() {
       cell: (row) => (
         <div>
           <p className="text-sm font-medium">{row.full_name}</p>
-          <p className="text-xs text-muted-foreground">
-            {row.username} · {row.email}
-          </p>
+          <p className="text-xs text-muted-foreground">{row.username}</p>
         </div>
       ),
     },

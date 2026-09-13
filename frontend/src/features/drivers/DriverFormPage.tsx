@@ -68,7 +68,7 @@ export function DriverFormPage() {
   const linkableUsersQuery = useLinkableDriverUsers();
   const driverUsers = (linkableUsersQuery.data ?? []).map((u) => ({
     id: u.id,
-    label: `${u.username} (${u.email})`,
+    label: u.username,
   }));
 
   const createForm = useForm<CreateValues>({

@@ -29,11 +29,12 @@ import {
   formatRelativeTime,
   formatSpeed,
   formatTemperature,
+  formatVehicleYear,
   formatVoltage,
 } from '@/utils/formatters';
 
 export function VehicleDetailPage() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const params = useParams<{ id: string }>();
   const vehicleId = Number(params.id);
   const navigate = useNavigate();
@@ -91,7 +92,7 @@ export function VehicleDetailPage() {
         </Button>
         <PageHeader
           title={vehicle.vehicle_id}
-          description={`${vehicle.make} ${vehicle.model} ${vehicle.year ? `(${vehicle.year})` : ''} · ${vehicle.license_plate}`}
+          description={`${vehicle.make} ${vehicle.model} ${formatVehicleYear(vehicle.year, language) ? `(${formatVehicleYear(vehicle.year, language)})` : ''} · ${vehicle.license_plate}`}
           actions={
             <div className="flex items-center gap-2">
               <StatusBadge status={vehicle.status} className="text-sm" />

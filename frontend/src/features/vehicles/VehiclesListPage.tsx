@@ -17,9 +17,10 @@ import { useAuth } from '@/features/auth/AuthContext';
 import { useDeleteVehicle, useVehicles } from '@/features/vehicles/hooks';
 import { ApiError } from '@/types/common';
 import type { Vehicle } from '@/types/vehicles';
+import { formatVehicleYear } from '@/utils/formatters';
 
 export function VehiclesListPage() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { user } = useAuth();
   const navigate = useNavigate();
   const vehiclesQuery = useVehicles();
@@ -65,7 +66,7 @@ export function VehiclesListPage() {
         <div>
           <p className="font-mono text-sm font-medium">{row.vehicle_id}</p>
           <p className="text-xs text-muted-foreground">
-            {row.make} {row.model} {row.year ? `(${row.year})` : ''}
+            {row.make} {row.model} {formatVehicleYear(row.year, language) ? `(${formatVehicleYear(row.year, language)})` : ''}
           </p>
         </div>
       ),

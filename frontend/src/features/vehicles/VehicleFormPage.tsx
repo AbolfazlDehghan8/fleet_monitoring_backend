@@ -20,13 +20,19 @@ import { VEHICLE_STATUSES } from '@/constants/statuses';
 import { useAuth } from '@/features/auth/AuthContext';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
-import { IRAN_PLATE_REGEX } from '@/utils/iranValidators';
+import { IRAN_PLATE_REGEX, OBU_SERIAL_REGEX, VIN_REGEX } from '@/utils/iranValidators';
+import { gregorianYearToJalali, jalaliYearToGregorian } from '@/utils/jalali';
 
 import { useAssignableDrivers, useCreateVehicle, useUpdateVehicle, useVehicle } from './hooks';
 
 const NONE = '__none__';
 
-function useVehicleSchema(t: (key: TranslationKey) => string) {
+function useVehicleSchema(t: (key: TranslationKey) => string, language: 'en' | 'fa') {
+  // The year field is displayed (and entered) in Shamsi in the Persian UI, so
+  // the acceptable range shifts accordingly; it stays Gregorian in English.
+  const yearMin = language === 'fa' ? gregorianYearToJalali(1900) : 1900;
+  const yearMax = language === 'fa' ? gregorianYearToJalali(2100) : 2100;
+
   return z.object({
     vehicle_id: z.string().min(1, t('vehicleForm.vehicleIdErr')).max(50),
     license_plate: z
@@ -34,14 +40,24 @@ function useVehicleSchema(t: (key: TranslationKey) => string) {
       .min(1, t('vehicleForm.licensePlateErr'))
       .max(8)
       .regex(IRAN_PLATE_REGEX, t('vehicleForm.licensePlateFormatErr')),
-    vin: z.string().max(17).optional().or(z.literal('')),
+    vin: z
+      .string()
+      .max(17)
+      .optional()
+      .or(z.literal(''))
+      .refine((val) => !val || VIN_REGEX.test(val), { message: t('vehicleForm.vinErr') }),
     make: z.string().max(50).optional().or(z.literal('')),
     model: z.string().max(50).optional().or(z.literal('')),
-    year: z.coerce.number().int().min(1900).max(2100).optional().or(z.nan()),
+    year: z.coerce.number().int().min(yearMin, t('vehicleForm.yearErr')).max(yearMax, t('vehicleForm.yearErr')).optional().or(z.nan()),
     status: z.enum(['active', 'maintenance', 'inactive', 'decommissioned']),
     driver: z.string(),
     assigned_manager: z.string(),
-    obu_serial_number: z.string().max(50).optional().or(z.literal('')),
+    obu_serial_number: z
+      .string()
+      .max(50)
+      .optional()
+      .or(z.literal(''))
+      .refine((val) => !val || OBU_SERIAL_REGEX.test(val), { message: t('vehicleForm.obuSerialErr') }),
     obu_firmware_version: z.string().max(20).optional().or(z.literal('')),
   });
 }
@@ -61,7 +77,7 @@ type VehicleFormValues = {
 };
 
 export function VehicleFormPage() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const params = useParams<{ id: string }>();
   const isEditing = Boolean(params.id);
   const vehicleId = params.id ? Number(params.id) : undefined;
@@ -75,7 +91,7 @@ export function VehicleFormPage() {
   const driversQuery = useAssignableDrivers();
   const createMutation = useCreateVehicle();
   const updateMutation = useUpdateVehicle(vehicleId ?? -1);
-  const vehicleSchema = useVehicleSchema(t);
+  const vehicleSchema = useVehicleSchema(t, language);
   const submitLockRef = React.useRef(false);
 
   // Only admins can reassign a vehicle's manager, and only admins can query
@@ -88,7 +104,7 @@ export function VehicleFormPage() {
       .list({ role: ROLES.FLEET_MANAGER })
       .then((users) => {
         if (!cancelled) {
-          setManagers(users.map((u) => ({ id: u.id, label: `${u.username} (${u.email})` })));
+          setManagers(users.map((u) => ({ id: u.id, label: u.username })));
         }
       })
       .catch(() => {
@@ -113,7 +129,12 @@ export function VehicleFormPage() {
           vin: vehicleQuery.data.vin ?? '',
           make: vehicleQuery.data.make ?? '',
           model: vehicleQuery.data.model ?? '',
-          year: vehicleQuery.data.year ?? Number.NaN,
+          year:
+            vehicleQuery.data.year == null
+              ? Number.NaN
+              : language === 'fa'
+                ? gregorianYearToJalali(vehicleQuery.data.year)
+                : vehicleQuery.data.year,
           status: vehicleQuery.data.status,
           driver: vehicleQuery.data.driver ? String(vehicleQuery.data.driver.id) : NONE,
           assigned_manager: vehicleQuery.data.assigned_manager
@@ -150,12 +171,16 @@ export function VehicleFormPage() {
     if (submitLockRef.current) return;
     submitLockRef.current = true;
 
+    const enteredYear = Number.isNaN(values.year) ? null : (values.year as number);
+    const gregorianYear =
+      enteredYear === null ? null : language === 'fa' ? jalaliYearToGregorian(enteredYear) : enteredYear;
+
     const payload = {
       license_plate: values.license_plate,
       vin: values.vin || null,
       make: values.make || '',
       model: values.model || '',
-      year: Number.isNaN(values.year) ? null : values.year,
+      year: gregorianYear,
       status: values.status,
       driver: values.driver === NONE ? null : Number(values.driver),
       ...(isAdmin ? { assigned_manager: values.assigned_manager === NONE ? null : Number(values.assigned_manager) } : {}),
@@ -206,7 +231,7 @@ export function VehicleFormPage() {
                 <Label htmlFor="vehicle_id">{t('vehicleForm.vehicleId')}</Label>
                 <Input
                   id="vehicle_id"
-                  placeholder="veh_0001"
+                  placeholder={t('vehicleForm.vehicleIdPlaceholder')}
                   disabled={isEditing}
                   {...register('vehicle_id')}
                 />
@@ -234,22 +259,29 @@ export function VehicleFormPage() {
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="vin">{t('vehicleForm.vin')}</Label>
-                <Input id="vin" placeholder="1HGCM82633A004352" {...register('vin')} />
+                <Input id="vin" dir="ltr" placeholder={t('vehicleForm.vinPlaceholder')} {...register('vin')} />
+                {errors.vin && <p className="text-xs text-destructive">{errors.vin.message}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="make">{t('vehicleForm.make')}</Label>
-                <Input id="make" placeholder="Ford" {...register('make')} />
+                <Input id="make" placeholder={t('vehicleForm.makePlaceholder')} {...register('make')} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="model">{t('vehicleForm.model')}</Label>
-                <Input id="model" placeholder="Transit" {...register('model')} />
+                <Input id="model" placeholder={t('vehicleForm.modelPlaceholder')} {...register('model')} />
               </div>
             </div>
 
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="year">{t('vehicleForm.year')}</Label>
-                <Input id="year" type="number" placeholder="2023" {...register('year')} />
+                <Input
+                  id="year"
+                  type="number"
+                  placeholder={t('vehicleForm.yearPlaceholder')}
+                  {...register('year')}
+                />
+                {errors.year && <p className="text-xs text-destructive">{errors.year.message}</p>}
               </div>
               <div className="space-y-1.5">
                 <Label>{t('common.status')}</Label>
@@ -327,11 +359,24 @@ export function VehicleFormPage() {
             <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="obu_serial_number">{t('vehicleForm.obuSerial')}</Label>
-                <Input id="obu_serial_number" placeholder="OBU-2026-0001" {...register('obu_serial_number')} />
+                <Input
+                  id="obu_serial_number"
+                  dir="ltr"
+                  placeholder={t('vehicleForm.obuSerialPlaceholder')}
+                  {...register('obu_serial_number')}
+                />
+                {errors.obu_serial_number && (
+                  <p className="text-xs text-destructive">{errors.obu_serial_number.message}</p>
+                )}
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="obu_firmware_version">{t('vehicleForm.obuFirmware')}</Label>
-                <Input id="obu_firmware_version" placeholder="1.4.2" {...register('obu_firmware_version')} />
+                <Input
+                  id="obu_firmware_version"
+                  dir="ltr"
+                  placeholder={t('vehicleForm.obuFirmwarePlaceholder')}
+                  {...register('obu_firmware_version')}
+                />
               </div>
             </div>
 

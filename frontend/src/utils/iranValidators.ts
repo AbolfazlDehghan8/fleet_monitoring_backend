@@ -24,3 +24,17 @@ const IRAN_PLATE_LETTERS =
 export const IRAN_PLATE_REGEX = new RegExp(
   `^\\d{2}(${IRAN_PLATE_LETTERS})\\d{3}\\d{2}$`,
 );
+
+/**
+ * VIN (Vehicle Identification Number): exactly 17 characters, uppercase
+ * letters and digits only, excluding I, O, and Q (they're never used in real
+ * VINs because they're easily confused with 1 and 0). e.g. 1HGCM82633A004352
+ */
+export const VIN_REGEX = /^[A-HJ-NPR-Z0-9]{17}$/i;
+
+/**
+ * OBU serial number: "OBU-" followed by a 4-digit year and a numeric
+ * sequence of at least 4 digits, e.g. OBU-2026-0001. Keep in sync with
+ * `backend/fleet_monitoring/validators.py`.
+ */
+export const OBU_SERIAL_REGEX = /^OBU-\d{4}-\d{4,}$/i;
