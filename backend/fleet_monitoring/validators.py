@@ -1,3 +1,5 @@
+import re
+
 from django.core.validators import RegexValidator
 
 iran_mobile_validator = RegexValidator(
@@ -22,4 +24,18 @@ iran_plate_validator = RegexValidator(
         'سه رقم + دو رقم (کد شهر). مثال: 12ب34567'
     ),
     code='invalid_iran_plate',
+)
+
+vin_validator = RegexValidator(
+    regex=r'^[A-HJ-NPR-Z0-9]{17}$',
+    message='شماره شاسی (VIN) باید ۱۷ کاراکتر شامل حروف انگلیسی و اعداد باشد (بدون I، O یا Q). مثال: 1HGCM82633A004352',
+    code='invalid_vin',
+    flags=re.IGNORECASE,
+)
+
+obu_serial_validator = RegexValidator(
+    regex=r'^OBU-\d{4}-\d{4,}$',
+    message='شماره سریال OBU باید با فرمت OBU-YYYY-NNNN باشد. مثال: OBU-2026-0001',
+    code='invalid_obu_serial',
+    flags=re.IGNORECASE,
 )
