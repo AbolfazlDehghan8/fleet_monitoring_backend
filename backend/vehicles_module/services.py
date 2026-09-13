@@ -144,11 +144,11 @@ class VehicleService:
                 vehicle.full_clean()
                 vehicle.save()
 
-                if obu_serial is not None or obu_firmware is not None:
-                    obu = getattr(vehicle, 'obu', None)
+                obu = getattr(vehicle, 'obu', None)
+                if obu is not None or obu_serial:
                     if obu is None:
-                        obu = OBU(vehicle=vehicle, serial_number=obu_serial or '')
-                    if obu_serial is not None:
+                        obu = OBU(vehicle=vehicle, serial_number=obu_serial, firmware_version=obu_firmware or '')
+                    if obu_serial:
                         obu.serial_number = obu_serial
                     if obu_firmware is not None:
                         obu.firmware_version = obu_firmware
@@ -316,6 +316,7 @@ class DriverService:
         audit_logger.info(
             'driver_deleted', extra={'actor': actor.id, 'action': 'delete_driver', 'target': driver_id}
         )
+
 
 class CompanyService:
 
