@@ -19,3 +19,19 @@ class RuleWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Rule
         fields = ['name', 'description', 'metric', 'operator', 'threshold', 'severity', 'is_active']
+
+    def validate(self, data):
+        metric = data.get('metric', getattr(self.instance, 'metric', None))
+        operator = data.get('operator', getattr(self.instance, 'operator', None))
+        threshold = data.get('threshold', getattr(self.instance, 'threshold', None))
+
+        duplicate_qs = Rule.objects.filter(metric=metric, operator=operator, threshold=threshold)
+        if self.instance is not None:
+            duplicate_qs = duplicate_qs.exclude(pk=self.instance.pk)
+
+        if duplicate_qs.exists():
+            raise serializers.ValidationError(
+                'A rule with the same metric, operator, and threshold already exists.'
+            )
+
+        return data
