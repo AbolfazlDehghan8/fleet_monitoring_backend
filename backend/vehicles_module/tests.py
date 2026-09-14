@@ -5,12 +5,13 @@ from rest_framework.test import APITestCase
 
 from auth_module.models import User
 
-from .models import Driver, Vehicle
+from .models import Company, Driver, Vehicle
 
 
 class VehicleTestBase(APITestCase):
     def setUp(self):
         cache.clear()
+        self.company = Company.objects.create(name='Test Company')
         self.admin = User.objects.create_user(
             username='admin01', email='admin01@example.com', password='StrongPass123', role='admin'
         )
@@ -36,7 +37,7 @@ class VehicleCreateTests(VehicleTestBase):
         self.url = reverse('vehicle-list-create')
         self.payload = {
             'vehicle_id': 'veh_0001',
-            'license_plate': 'ABC-1234',
+            'license_plate': '12ب34567',
             'vin': '1HGCM82633A004352',
             'make': 'Ford',
             'model': 'Transit',
@@ -76,12 +77,12 @@ class VehicleListRetrieveTests(VehicleTestBase):
     def setUp(self):
         super().setUp()
         self.vehicle_a = Vehicle.objects.create(
-            vehicle_id='veh_a', license_plate='PLT-A', make='Ford', model='Transit',
-            assigned_manager=self.manager,
+            vehicle_id='veh_a', license_plate='12ب11111', company=self.company,
+            make='Ford', model='Transit', assigned_manager=self.manager,
         )
         self.vehicle_b = Vehicle.objects.create(
-            vehicle_id='veh_b', license_plate='PLT-B', make='Ford', model='Transit',
-            assigned_manager=self.other_manager,
+            vehicle_id='veh_b', license_plate='12ب22222', company=self.company,
+            make='Ford', model='Transit', assigned_manager=self.other_manager,
         )
 
     def test_admin_sees_all_vehicles(self):
@@ -117,8 +118,8 @@ class VehicleUpdateDeleteTests(VehicleTestBase):
     def setUp(self):
         super().setUp()
         self.vehicle = Vehicle.objects.create(
-            vehicle_id='veh_c', license_plate='PLT-C', make='Ford', model='Transit',
-            assigned_manager=self.manager,
+            vehicle_id='veh_c', license_plate='12ب33333', company=self.company,
+            make='Ford', model='Transit', assigned_manager=self.manager,
         )
 
     def test_admin_can_update_any_field_including_reassignment(self):
@@ -172,8 +173,8 @@ class VehicleMeAndStatusTests(VehicleTestBase):
     def setUp(self):
         super().setUp()
         self.vehicle = Vehicle.objects.create(
-            vehicle_id='veh_d', license_plate='PLT-D', make='Ford', model='Transit',
-            assigned_manager=self.manager, driver=self.driver,
+            vehicle_id='veh_d', license_plate='12ب44444', company=self.company,
+            make='Ford', model='Transit', assigned_manager=self.manager, driver=self.driver,
         )
 
     def test_driver_can_get_own_vehicle(self):
@@ -184,7 +185,7 @@ class VehicleMeAndStatusTests(VehicleTestBase):
         self.assertEqual(response.data[0]['id'], self.vehicle.id)
 
     def test_driver_without_profile_gets_empty_list(self):
-        unassigned_driver = User.objects.create_user(
+        User.objects.create_user(
             username='drv02', email='drv02@example.com', password='StrongPass123', role='driver'
         )
         self._login_as('drv02')
@@ -245,14 +246,16 @@ class DriverEndpointTests(VehicleTestBase):
 
     def test_fleet_manager_sees_only_drivers_of_their_vehicles(self):
         Vehicle.objects.create(
-            vehicle_id='veh_e', license_plate='PLT-E', assigned_manager=self.manager, driver=self.driver,
+            vehicle_id='veh_e', license_plate='12ب55555', company=self.company,
+            assigned_manager=self.manager, driver=self.driver,
         )
         other_driver_user = User.objects.create_user(
             username='drv04', email='drv04@example.com', password='StrongPass123', role='driver'
         )
         other_driver = Driver.objects.create(user=other_driver_user, license_number='DL-003')
         Vehicle.objects.create(
-            vehicle_id='veh_f', license_plate='PLT-F', assigned_manager=self.other_manager, driver=other_driver,
+            vehicle_id='veh_f', license_plate='12ب66666', company=self.company,
+            assigned_manager=self.other_manager, driver=other_driver,
         )
 
         self._login_as('fm01')
@@ -268,9 +271,6 @@ class DriverEndpointTests(VehicleTestBase):
 
 
 class DriverLinkableUsersTests(VehicleTestBase):
-    """self.driver_user already has a Driver profile (created in setUp), so it
-    must never appear in this list — only role=driver users still unlinked."""
-
     def test_fleet_manager_sees_unlinked_driver_users_only(self):
         unlinked = User.objects.create_user(
             username='drv10', email='drv10@example.com', password='StrongPass123', role='driver'
@@ -299,27 +299,20 @@ class DriverLinkableUsersTests(VehicleTestBase):
 
 class DriverAssignableListTests(VehicleTestBase):
     def test_fleet_manager_sees_own_plus_unassigned_drivers(self):
-        from .models import Company
-
-        company = Company.objects.create(name='Acme Assignable Co')
-
-        # self.driver is linked to a vehicle owned by fm01.
         Vehicle.objects.create(
-            vehicle_id='veh_g', license_plate='PLT-G', company=company,
+            vehicle_id='veh_g', license_plate='12ب77777', company=self.company,
             assigned_manager=self.manager, driver=self.driver,
         )
-        # Freshly created driver profile — not on any vehicle yet.
         free_user = User.objects.create_user(
             username='drv12', email='drv12@example.com', password='StrongPass123', role='driver'
         )
         free_driver = Driver.objects.create(user=free_user, license_number='DL-012')
-        # Driver assigned to a DIFFERENT fleet manager's vehicle — must stay hidden.
         other_user = User.objects.create_user(
             username='drv13', email='drv13@example.com', password='StrongPass123', role='driver'
         )
         other_driver = Driver.objects.create(user=other_user, license_number='DL-013')
         Vehicle.objects.create(
-            vehicle_id='veh_h', license_plate='PLT-H', company=company,
+            vehicle_id='veh_h', license_plate='12ب88888', company=self.company,
             assigned_manager=self.other_manager, driver=other_driver,
         )
 
@@ -346,34 +339,15 @@ class DriverAssignableListTests(VehicleTestBase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
-class CompanyModelTests(VehicleTestBase):
-    def test_company_can_be_created_and_linked_to_vehicle(self):
-        from .models import Company
-
-        company = Company.objects.create(name='Acme Logistics', contact_email='ops@acme.example')
-        vehicle = Vehicle.objects.create(
-            vehicle_id='veh_company_1', license_plate='CMP-001', company=company,
-            assigned_manager=self.manager,
-        )
-        self.assertEqual(vehicle.company.name, 'Acme Logistics')
-        self.assertEqual(company.vehicles.count(), 1)
-
-    def test_vehicle_company_is_optional(self):
-        vehicle = Vehicle.objects.create(
-            vehicle_id='veh_company_2', license_plate='CMP-002', assigned_manager=self.manager,
-        )
-        self.assertIsNone(vehicle.company)
-
-
 class DashboardStatsTests(VehicleTestBase):
     def setUp(self):
         super().setUp()
         self.vehicle = Vehicle.objects.create(
-            vehicle_id='veh_dash_1', license_plate='DSH-001',
+            vehicle_id='veh_dash_1', license_plate='12ب99999', company=self.company,
             assigned_manager=self.manager, driver=self.driver, status='active',
         )
         Vehicle.objects.create(
-            vehicle_id='veh_dash_2', license_plate='DSH-002',
+            vehicle_id='veh_dash_2', license_plate='12ب10101', company=self.company,
             assigned_manager=self.other_manager, status='maintenance',
         )
 
@@ -401,7 +375,9 @@ class DashboardStatsTests(VehicleTestBase):
         first = self.client.get(reverse('vehicle-dashboard-stats'))
         self.assertEqual(first.data['total_vehicles'], 2)
 
-        Vehicle.objects.create(vehicle_id='veh_dash_3', license_plate='DSH-003')
+        Vehicle.objects.create(
+            vehicle_id='veh_dash_3', license_plate='12ب20202', company=self.company,
+        )
 
         cached = self.client.get(reverse('vehicle-dashboard-stats'))
         self.assertEqual(cached.data['total_vehicles'], 2)
@@ -411,14 +387,13 @@ class DashboardStatsTests(VehicleTestBase):
         refreshed = self.client.get(reverse('vehicle-dashboard-stats'))
         self.assertEqual(refreshed.data['total_vehicles'], 3)
 
+
 class CompanyViewTests(VehicleTestBase):
     def setUp(self):
         super().setUp()
         self.url = reverse('company-detail')
 
     def test_admin_can_retrieve_company(self):
-        # Relies on the 0003_seed_company data migration having created the
-        # singleton 'Default Company' row in the test database.
         self._login_as('admin01')
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -445,14 +420,12 @@ class CompanyViewTests(VehicleTestBase):
         self.assertEqual(response.data['contact_email'], 'newops@example.com')
 
     def test_partial_update_does_not_touch_other_fields(self):
-        from .models import Company
-
         original_name = Company.objects.first().name
         self._login_as('admin01')
-        response = self.client.patch(self.url, {'contact_phone': '+1-555-0100'})
+        response = self.client.patch(self.url, {'contact_phone': '02187654321'})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['name'], original_name)
-        self.assertEqual(response.data['contact_phone'], '+1-555-0100')
+        self.assertEqual(response.data['contact_phone'], '02187654321')
 
     def test_fleet_manager_cannot_update_company(self):
         self._login_as('fm01')
@@ -465,16 +438,12 @@ class CompanyViewTests(VehicleTestBase):
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_get_returns_404_when_no_company_exists(self):
-        from .models import Company
-
         Company.objects.all().delete()
         self._login_as('admin01')
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_update_returns_404_when_no_company_exists(self):
-        from .models import Company
-
         Company.objects.all().delete()
         self._login_as('admin01')
         response = self.client.patch(self.url, {'contact_email': 'x@example.com'})
