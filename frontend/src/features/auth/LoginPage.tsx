@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { resolveLoginRedirect } from '@/constants/routeAccess';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import { ApiError } from '@/types/common';
 
 import { useAuth } from './AuthContext';
@@ -64,7 +65,7 @@ export function LoginPage() {
       navigate(redirectTo, { replace: true });
     } catch (error) {
       if (error instanceof ApiError) {
-        setServerError(ApiError.extractMessage(error.body) ?? t('login.errorInvalid'));
+        setServerError(getApiErrorMessage(error.body, t) ?? t('login.errorInvalid'));
       } else {
         setServerError(t('login.errorNetwork'));
       }

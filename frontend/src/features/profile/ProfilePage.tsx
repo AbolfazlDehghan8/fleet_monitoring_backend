@@ -17,14 +17,15 @@ import { toast } from '@/components/ui/use-toast';
 import { useAuth } from '@/features/auth/AuthContext';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import { formatDateTime } from '@/utils/formatters';
 
 import { useChangePassword, useProfile, useUpdateProfile } from './hooks';
 
-function useSchemas(t: (key: TranslationKey) => string) {
+function useSchemas(t: (key: TranslationKey, vars?: Record<string, string | number>) => string) {
   const profileSchema = z.object({
-    first_name: z.string().max(150).optional().or(z.literal('')),
-    last_name: z.string().max(150).optional().or(z.literal('')),
+    first_name: z.string().max(150, t('validation.maxLength', { max: 150 })).optional().or(z.literal('')),
+    last_name: z.string().max(150, t('validation.maxLength', { max: 150 })).optional().or(z.literal('')),
     email: z.string().email(t('register.errorEmailInvalid')),
   });
 
@@ -92,7 +93,7 @@ export function ProfilePage() {
     } catch (error) {
       toast({
         title: t('profile.couldNotUpdate'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }
@@ -106,7 +107,7 @@ export function ProfilePage() {
     } catch (error) {
       toast({
         title: t('profile.couldNotChangePassword'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

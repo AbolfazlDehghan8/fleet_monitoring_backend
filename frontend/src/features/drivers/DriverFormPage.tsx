@@ -22,24 +22,25 @@ import {
 } from '@/features/vehicles/hooks';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import { IRAN_MOBILE_REGEX } from '@/utils/iranValidators';
 
-function useSchemas(t: (key: TranslationKey) => string) {
+function useSchemas(t: (key: TranslationKey, vars?: Record<string, string | number>) => string) {
   const phoneField = z
     .string()
-    .max(11)
+    .max(11, t('driverForm.phoneNumberErr'))
     .regex(IRAN_MOBILE_REGEX, t('driverForm.phoneNumberErr'))
     .optional()
     .or(z.literal(''));
 
   const createSchema = z.object({
     user: z.string().min(1, t('driverForm.userRequired')),
-    license_number: z.string().min(1, t('driverForm.licenseRequired')).max(50),
+    license_number: z.string().min(1, t('driverForm.licenseRequired')).max(50, t('validation.maxLength', { max: 50 })),
     phone_number: phoneField,
   });
 
   const editSchema = z.object({
-    license_number: z.string().min(1, t('driverForm.licenseRequired')).max(50),
+    license_number: z.string().min(1, t('driverForm.licenseRequired')).max(50, t('validation.maxLength', { max: 50 })),
     phone_number: phoneField,
     is_active: z.boolean(),
   });
@@ -107,7 +108,7 @@ export function DriverFormPage() {
     } catch (error) {
       toast({
         title: t('driverForm.couldNotCreate'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }
@@ -121,7 +122,7 @@ export function DriverFormPage() {
     } catch (error) {
       toast({
         title: t('driverForm.couldNotUpdate'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

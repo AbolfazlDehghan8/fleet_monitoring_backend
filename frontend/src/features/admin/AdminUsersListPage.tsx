@@ -15,6 +15,7 @@ import { toast } from '@/components/ui/use-toast';
 import { ROLES, type Role } from '@/constants/roles';
 import { useAuth } from '@/features/auth/AuthContext';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import type { AdminUser } from '@/types/admin';
 
 import { useAdminUsers, useDeleteAdminUser, useUpdateAdminUser } from './hooks';
@@ -29,7 +30,7 @@ function ActiveToggle({ targetUser, disabled }: { targetUser: AdminUser; disable
     } catch (error) {
       toast({
         title: t('admin.failedToUpdateUser'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }
@@ -73,7 +74,7 @@ export function AdminUsersListPage() {
     } catch (error) {
       toast({
         title: t('admin.failedToDeleteUser'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

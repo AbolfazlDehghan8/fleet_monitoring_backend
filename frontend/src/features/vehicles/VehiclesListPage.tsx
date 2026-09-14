@@ -16,6 +16,7 @@ import { VEHICLE_STATUSES, type VehicleStatus } from '@/constants/statuses';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useDeleteVehicle, useVehicles } from '@/features/vehicles/hooks';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import type { Vehicle } from '@/types/vehicles';
 import { formatVehicleYear } from '@/utils/formatters';
 
@@ -51,7 +52,7 @@ export function VehiclesListPage() {
     } catch (error) {
       toast({
         title: t('vehicles.failedToDelete'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

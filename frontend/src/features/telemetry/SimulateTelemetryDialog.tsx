@@ -21,21 +21,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from '@/components/ui/use-toast';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import type { Vehicle } from '@/types/vehicles';
 
 import { useIngestTelemetry } from './hooks';
 
-function useReadingSchema(t: (key: TranslationKey) => string) {
+function useReadingSchema(t: (key: TranslationKey, vars?: Record<string, string | number>) => string) {
   return z.object({
     vehicle_id: z.string().min(1, t('telemetry.selectVehicleErr')),
     obu_serial: z.string().min(1, t('telemetry.obuSerialErr')),
-    speed: z.coerce.number().min(0),
+    speed: z.coerce.number().min(0, t('validation.nonNegative')),
     engine_temperature: z.coerce.number(),
-    battery_voltage: z.coerce.number().min(0).max(50),
-    fuel_level: z.coerce.number().min(0).max(100),
-    latitude: z.coerce.number().min(-90).max(90),
-    longitude: z.coerce.number().min(-180).max(180),
-    odometer: z.coerce.number().min(0),
+    battery_voltage: z.coerce
+      .number()
+      .min(0, t('validation.nonNegative'))
+      .max(50, t('validation.maxValue', { max: 50 })),
+    fuel_level: z.coerce
+      .number()
+      .min(0, t('validation.nonNegative'))
+      .max(100, t('validation.maxValue', { max: 100 })),
+    latitude: z.coerce
+      .number()
+      .min(-90, t('validation.minValue', { min: -90 }))
+      .max(90, t('validation.maxValue', { max: 90 })),
+    longitude: z.coerce
+      .number()
+      .min(-180, t('validation.minValue', { min: -180 }))
+      .max(180, t('validation.maxValue', { max: 180 })),
+    odometer: z.coerce.number().min(0, t('validation.nonNegative')),
   });
 }
 
@@ -112,7 +125,7 @@ export function SimulateTelemetryDialog({ vehicles, defaultVehicleId }: Simulate
     } catch (error) {
       toast({
         title: t('telemetry.couldNotSubmit'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

@@ -15,6 +15,7 @@ import { toast } from '@/components/ui/use-toast';
 import { RULE_METRICS } from '@/constants/statuses';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import type { Rule } from '@/types/rules';
 
 import { useDeleteRule, useRules, useUpdateRule } from './hooks';
@@ -29,7 +30,7 @@ function RuleToggle({ rule }: { rule: Rule }) {
     } catch (error) {
       toast({
         title: t('rules.failedToUpdate'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }
@@ -74,7 +75,7 @@ export function RulesListPage() {
     } catch (error) {
       toast({
         title: t('rules.failedToDelete'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

@@ -22,6 +22,7 @@ import { useTelemetry } from '@/features/telemetry/hooks';
 import { useDeleteVehicle, useVehicle, useVehicleStatus } from '@/features/vehicles/hooks';
 import type { Alert } from '@/types/alerts';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import {
   formatDateTime,
   formatFuel,
@@ -56,7 +57,7 @@ export function VehicleDetailPage() {
     } catch (error) {
       toast({
         title: t('vehicles.failedToDelete'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

@@ -18,13 +18,14 @@ import { toast } from '@/components/ui/use-toast';
 import { RULE_METRICS, RULE_OPERATORS, SEVERITIES } from '@/constants/statuses';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 
 import { useCreateRule, useRule, useUpdateRule } from './hooks';
 
-function useRuleSchema(t: (key: TranslationKey) => string) {
+function useRuleSchema(t: (key: TranslationKey, vars?: Record<string, string | number>) => string) {
   return z.object({
-    name: z.string().min(1, t('ruleForm.nameRequired')).max(200),
-    description: z.string().max(1000).optional(),
+    name: z.string().min(1, t('ruleForm.nameRequired')).max(200, t('validation.maxLength', { max: 200 })),
+    description: z.string().max(1000, t('validation.maxLength', { max: 1000 })).optional(),
     metric: z.enum(['speed', 'engine_temperature', 'battery_voltage', 'fuel_level', 'odometer']),
     operator: z.enum(['gt', 'gte', 'lt', 'lte', 'eq']),
     threshold: z.coerce.number({ invalid_type_error: t('ruleForm.thresholdInvalid') }),
@@ -105,7 +106,7 @@ export function RuleFormPage() {
     } catch (error) {
       toast({
         title: t('ruleForm.couldNotSave'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

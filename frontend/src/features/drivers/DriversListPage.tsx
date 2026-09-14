@@ -15,6 +15,7 @@ import { ROLES } from '@/constants/roles';
 import { useAuth } from '@/features/auth/AuthContext';
 import { useDeleteDriver, useDrivers } from '@/features/vehicles/hooks';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import type { Driver } from '@/types/vehicles';
 
 export function DriversListPage() {
@@ -45,7 +46,7 @@ export function DriversListPage() {
     } catch (error) {
       toast({
         title: t('drivers.failedToDelete'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

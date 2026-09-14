@@ -15,16 +15,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import { ApiError } from '@/types/common';
 
 function useRegisterSchema() {
   const { t } = useLanguage();
   return z
     .object({
-      username: z.string().min(1, t('login.errorUsernameRequired')).max(150),
+      username: z.string().min(1, t('login.errorUsernameRequired')).max(150, t('validation.maxLength', { max: 150 })),
       email: z.string().min(1, t('register.errorEmailRequired')).email(t('register.errorEmailInvalid')),
-      first_name: z.string().max(150).optional().or(z.literal('')),
-      last_name: z.string().max(150).optional().or(z.literal('')),
+      first_name: z.string().max(150, t('validation.maxLength', { max: 150 })).optional().or(z.literal('')),
+      last_name: z.string().max(150, t('validation.maxLength', { max: 150 })).optional().or(z.literal('')),
       password: z.string().min(8, t('register.errorPasswordMin')),
       password_confirm: z.string().min(8, t('register.errorPasswordMin')),
     })
@@ -64,7 +65,7 @@ export function RegisterPage() {
       setDone(true);
     } catch (error) {
       if (error instanceof ApiError) {
-        setServerError(ApiError.extractMessage(error.body) ?? t('register.errorCreate'));
+        setServerError(getApiErrorMessage(error.body, t) ?? t('register.errorCreate'));
       } else {
         setServerError(t('login.errorNetwork'));
       }

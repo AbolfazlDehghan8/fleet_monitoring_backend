@@ -17,6 +17,7 @@ import { ROLES } from '@/constants/roles';
 import { useAuth } from '@/features/auth/AuthContext';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import { formatDateTime, formatNumber } from '@/utils/formatters';
 
 import { useDeleteReport, useExportReportCsv, useReport } from './hooks';
@@ -47,7 +48,7 @@ export function ReportDetailPage() {
     } catch (error) {
       toast({
         title: t('reportDetail.exportFailed'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }
@@ -61,7 +62,7 @@ export function ReportDetailPage() {
     } catch (error) {
       toast({
         title: t('reports.failedToDelete'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

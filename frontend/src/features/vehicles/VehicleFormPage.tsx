@@ -20,6 +20,7 @@ import { VEHICLE_STATUSES } from '@/constants/statuses';
 import { useAuth } from '@/features/auth/AuthContext';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import { IRAN_PLATE_REGEX, OBU_SERIAL_REGEX, VIN_REGEX } from '@/utils/iranValidators';
 import { gregorianYearToJalali, jalaliYearToGregorian } from '@/utils/jalali';
 
@@ -27,38 +28,41 @@ import { useAssignableDrivers, useCreateVehicle, useUpdateVehicle, useVehicle } 
 
 const NONE = '__none__';
 
-function useVehicleSchema(t: (key: TranslationKey) => string, language: 'en' | 'fa') {
+function useVehicleSchema(
+  t: (key: TranslationKey, vars?: Record<string, string | number>) => string,
+  language: 'en' | 'fa',
+) {
   // The year field is displayed (and entered) in Shamsi in the Persian UI, so
   // the acceptable range shifts accordingly; it stays Gregorian in English.
   const yearMin = language === 'fa' ? gregorianYearToJalali(1900) : 1900;
   const yearMax = language === 'fa' ? gregorianYearToJalali(2100) : 2100;
 
   return z.object({
-    vehicle_id: z.string().min(1, t('vehicleForm.vehicleIdErr')).max(50),
+    vehicle_id: z.string().min(1, t('vehicleForm.vehicleIdErr')).max(50, t('validation.maxLength', { max: 50 })),
     license_plate: z
       .string()
       .min(1, t('vehicleForm.licensePlateErr'))
-      .max(8)
+      .max(8, t('vehicleForm.licensePlateFormatErr'))
       .regex(IRAN_PLATE_REGEX, t('vehicleForm.licensePlateFormatErr')),
     vin: z
       .string()
-      .max(17)
+      .max(17, t('vehicleForm.vinErr'))
       .optional()
       .or(z.literal(''))
       .refine((val) => !val || VIN_REGEX.test(val), { message: t('vehicleForm.vinErr') }),
-    make: z.string().max(50).optional().or(z.literal('')),
-    model: z.string().max(50).optional().or(z.literal('')),
+    make: z.string().max(50, t('validation.maxLength', { max: 50 })).optional().or(z.literal('')),
+    model: z.string().max(50, t('validation.maxLength', { max: 50 })).optional().or(z.literal('')),
     year: z.coerce.number().int().min(yearMin, t('vehicleForm.yearErr')).max(yearMax, t('vehicleForm.yearErr')).optional().or(z.nan()),
     status: z.enum(['active', 'maintenance', 'inactive', 'decommissioned']),
     driver: z.string(),
     assigned_manager: z.string(),
     obu_serial_number: z
       .string()
-      .max(50)
+      .max(50, t('vehicleForm.obuSerialErr'))
       .optional()
       .or(z.literal(''))
       .refine((val) => !val || OBU_SERIAL_REGEX.test(val), { message: t('vehicleForm.obuSerialErr') }),
-    obu_firmware_version: z.string().max(20).optional().or(z.literal('')),
+    obu_firmware_version: z.string().max(20, t('validation.maxLength', { max: 20 })).optional().or(z.literal('')),
   });
 }
 
@@ -200,7 +204,7 @@ export function VehicleFormPage() {
     } catch (error) {
       toast({
         title: t('vehicleForm.couldNotSave'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     } finally {

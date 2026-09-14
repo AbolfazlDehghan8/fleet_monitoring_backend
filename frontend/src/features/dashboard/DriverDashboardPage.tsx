@@ -15,6 +15,7 @@ import { PageHeader } from '@/components/shared/PageHeader';
 import { useAcknowledgeMyAlert, useMyAlerts } from '@/features/alerts/hooks';
 import { useMyVehicles, useVehicleStatus } from '@/features/vehicles/hooks';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import type { Alert } from '@/types/alerts';
 import type { Vehicle } from '@/types/vehicles';
 import {
@@ -170,7 +171,7 @@ function MyAlertRow({ alertId }: { alertId: number }) {
     } catch (error) {
       toast({
         title: t('alerts.failedToAcknowledge'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

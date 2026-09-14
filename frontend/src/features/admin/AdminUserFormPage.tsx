@@ -18,19 +18,20 @@ import { toast } from '@/components/ui/use-toast';
 import { ROLES } from '@/constants/roles';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 
 import { useAdminUser, useCreateAdminUser, useUpdateAdminUser } from './hooks';
 
-function useSchemas(t: (key: TranslationKey) => string) {
+function useSchemas(t: (key: TranslationKey, vars?: Record<string, string | number>) => string) {
   const createSchema = z
     .object({
-      username: z.string().min(1, t('login.errorUsernameRequired')).max(150),
+      username: z.string().min(1, t('login.errorUsernameRequired')).max(150, t('validation.maxLength', { max: 150 })),
       email: z.string().email(t('register.errorEmailInvalid')),
       password: z.string().min(8, t('register.errorPasswordMin')),
       password_confirm: z.string().min(8, t('register.errorPasswordMin')),
       role: z.enum(['admin', 'fleet_manager', 'driver']),
-      first_name: z.string().max(150).optional().or(z.literal('')),
-      last_name: z.string().max(150).optional().or(z.literal('')),
+      first_name: z.string().max(150, t('validation.maxLength', { max: 150 })).optional().or(z.literal('')),
+      last_name: z.string().max(150, t('validation.maxLength', { max: 150 })).optional().or(z.literal('')),
     })
     .refine((data) => data.password === data.password_confirm, {
       message: t('register.errorPasswordMismatch'),
@@ -40,8 +41,8 @@ function useSchemas(t: (key: TranslationKey) => string) {
   const editSchema = z.object({
     email: z.string().email(t('register.errorEmailInvalid')).optional().or(z.literal('')),
     role: z.enum(['admin', 'fleet_manager', 'driver']),
-    first_name: z.string().max(150).optional().or(z.literal('')),
-    last_name: z.string().max(150).optional().or(z.literal('')),
+    first_name: z.string().max(150, t('validation.maxLength', { max: 150 })).optional().or(z.literal('')),
+    last_name: z.string().max(150, t('validation.maxLength', { max: 150 })).optional().or(z.literal('')),
     is_active: z.boolean(),
   });
 
@@ -120,7 +121,7 @@ export function AdminUserFormPage() {
     } catch (error) {
       toast({
         title: t('adminForm.couldNotCreate'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }
@@ -134,7 +135,7 @@ export function AdminUserFormPage() {
     } catch (error) {
       toast({
         title: t('adminForm.couldNotUpdate'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

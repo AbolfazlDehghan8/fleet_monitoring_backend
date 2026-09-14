@@ -15,6 +15,7 @@ import { SEVERITIES, type Severity } from '@/constants/statuses';
 import { useAcknowledgeAlert, useAlerts } from '@/features/alerts/hooks';
 import { formatDateTime } from '@/utils/formatters';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 import type { Alert } from '@/types/alerts';
 
 export function AlertsListPage() {
@@ -49,7 +50,7 @@ export function AlertsListPage() {
     } catch (error) {
       toast({
         title: t('alerts.failedToAcknowledge'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }

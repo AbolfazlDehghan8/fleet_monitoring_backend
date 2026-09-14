@@ -15,6 +15,7 @@ import { toast } from '@/components/ui/use-toast';
 import { useAcknowledgeAlert, useAlert } from '@/features/alerts/hooks';
 import { formatDateTime } from '@/utils/formatters';
 import { ApiError } from '@/types/common';
+import { getApiErrorMessage } from '@/i18n/apiErrors';
 
 /**
  * Shared alert detail view. The underlying `/alerts/:id/` and `/alerts/:id/acknowledge/`
@@ -44,7 +45,7 @@ export function AlertDetailPage({
     } catch (error) {
       toast({
         title: t('alerts.failedToAcknowledge'),
-        description: error instanceof ApiError ? ApiError.extractMessage(error.body) : undefined,
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
     }
