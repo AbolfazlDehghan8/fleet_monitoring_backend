@@ -27,7 +27,10 @@ def _error_response(exc):
         return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
 
     detail = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
-    is_not_found = detail.get('detail') in ('Vehicle not found', 'Driver not found', 'Company not found')
+    detail_value = detail.get('detail')
+    if isinstance(detail_value, list) and len(detail_value) == 1:
+        detail_value = detail_value[0]
+    is_not_found = detail_value in ('Vehicle not found', 'Driver not found', 'Company not found')
     status_code = status.HTTP_404_NOT_FOUND if is_not_found else status.HTTP_400_BAD_REQUEST
     return Response(detail, status=status_code)
 
@@ -273,6 +276,7 @@ class DriverDetailView(APIView):
             return _error_response(exc)
 
         return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class CompanyView(APIView):
 
