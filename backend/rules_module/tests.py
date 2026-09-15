@@ -6,7 +6,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from auth_module.models import User
-from vehicles_module.models import Vehicle
+from vehicles_module.models import Company, Vehicle
 
 from .models import Rule
 from .services import RuleService
@@ -121,7 +121,10 @@ class RuleEvaluationTests(RulesTestBase):
 
     def setUp(self):
         super().setUp()
-        self.vehicle = Vehicle.objects.create(vehicle_id='veh_rule_1', license_plate='RULE-001')
+        self.company = Company.objects.create(name='Rules Test Co')
+        self.vehicle = Vehicle.objects.create(
+            vehicle_id='veh_rule_1', license_plate='12ب67890', company=self.company
+        )
 
     def test_rule_evaluate_gt_operator(self):
         rule = Rule(metric='engine_temperature', operator='gt', threshold=100)
@@ -146,7 +149,7 @@ class RuleEvaluationTests(RulesTestBase):
 
         from telemetry_module.models import TelemetryLog
         log = TelemetryLog.objects.create(
-            vehicle=self.vehicle, obu_serial='OBU-TEST', timestamp='2025-07-11T14:32:01.234Z',
+            vehicle=self.vehicle, obu_serial='OBU-2026-0001', timestamp='2025-07-11T14:32:01.234Z',
             speed=60, engine_temperature=115, battery_voltage=12.5, fuel_level=50,
             latitude=0, longitude=0, odometer=1000, raw_payload={},
         )
@@ -164,7 +167,7 @@ class RuleEvaluationTests(RulesTestBase):
 
         from telemetry_module.models import TelemetryLog
         log = TelemetryLog.objects.create(
-            vehicle=self.vehicle, obu_serial='OBU-TEST', timestamp='2025-07-11T14:32:01.234Z',
+            vehicle=self.vehicle, obu_serial='OBU-2026-0001', timestamp='2025-07-11T14:32:01.234Z',
             speed=60, engine_temperature=200, battery_voltage=12.5, fuel_level=50,
             latitude=0, longitude=0, odometer=1000, raw_payload={},
         )
@@ -180,7 +183,7 @@ class RuleEvaluationTests(RulesTestBase):
 
         from telemetry_module.models import TelemetryLog
         log = TelemetryLog.objects.create(
-            vehicle=self.vehicle, obu_serial='OBU-TEST', timestamp='2025-07-11T14:32:01.234Z',
+            vehicle=self.vehicle, obu_serial='OBU-2026-0001', timestamp='2025-07-11T14:32:01.234Z',
             speed=60, engine_temperature=115, battery_voltage=12.5, fuel_level=50,
             latitude=0, longitude=0, odometer=1000, raw_payload={},
         )
@@ -198,7 +201,7 @@ class RuleEvaluationTests(RulesTestBase):
 
         from telemetry_module.models import TelemetryLog
         log = TelemetryLog.objects.create(
-            vehicle=self.vehicle, obu_serial='OBU-TEST', timestamp='2025-07-11T14:32:01.234Z',
+            vehicle=self.vehicle, obu_serial='OBU-2026-0001', timestamp='2025-07-11T14:32:01.234Z',
             speed=60, engine_temperature=115, battery_voltage=12.5, fuel_level=50,
             latitude=0, longitude=0, odometer=1000, raw_payload={},
         )
