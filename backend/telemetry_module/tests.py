@@ -5,7 +5,7 @@ from rest_framework.test import APITestCase
 from unittest.mock import patch
 
 from auth_module.models import User
-from vehicles_module.models import Driver, Vehicle
+from vehicles_module.models import Company, Driver, Vehicle
 
 from .models import TelemetryLog
 from .services import TelemetryService
@@ -40,8 +40,10 @@ class TelemetryTestBase(APITestCase):
             username='driveruser', email='d@example.com', password='StrongPass123', role='driver'
         )
         self.driver = Driver.objects.create(user=self.driver_user, license_number='LIC-001')
+        self.company = Company.objects.create(name='Telemetry Test Co')
         self.vehicle = Vehicle.objects.create(
-            vehicle_id='veh_8a3f2b1c', license_plate='ABC-123', assigned_manager=self.manager, driver=self.driver
+            vehicle_id='veh_8a3f2b1c', license_plate='12ب12345', assigned_manager=self.manager,
+            driver=self.driver, company=self.company,
         )
 
     def _auth_as(self, username, password='StrongPass123'):
@@ -171,8 +173,10 @@ class TelemetryRetentionAndHealthCheckTests(APITestCase):
         self.manager = User.objects.create_user(
             username='fm_ret', email='fm_ret@example.com', password='StrongPass123', role='fleet_manager'
         )
+        self.company = Company.objects.create(name='Retention Test Co')
         self.vehicle = Vehicle.objects.create(
-            vehicle_id='veh_retention', license_plate='RET-001', assigned_manager=self.manager,
+            vehicle_id='veh_retention', license_plate='12ب54321', assigned_manager=self.manager,
+            company=self.company,
         )
 
     def test_cleanup_old_telemetry_deletes_only_expired_rows(self):
@@ -183,13 +187,13 @@ class TelemetryRetentionAndHealthCheckTests(APITestCase):
         from .tasks import cleanup_old_telemetry
 
         old_log = TelemetryLog.objects.create(
-            vehicle=self.vehicle, obu_serial='OBU-OLD',
+            vehicle=self.vehicle, obu_serial='OBU-2020-0001',
             timestamp=timezone.now() - timedelta(days=400),
             speed=10, engine_temperature=80, battery_voltage=12, fuel_level=50,
             latitude=0, longitude=0, odometer=1, raw_payload={},
         )
         recent_log = TelemetryLog.objects.create(
-            vehicle=self.vehicle, obu_serial='OBU-NEW',
+            vehicle=self.vehicle, obu_serial='OBU-2026-0002',
             timestamp=timezone.now(),
             speed=10, engine_temperature=80, battery_voltage=12, fuel_level=50,
             latitude=0, longitude=0, odometer=2, raw_payload={},
