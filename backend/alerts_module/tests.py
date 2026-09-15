@@ -7,7 +7,7 @@ from rest_framework.test import APITestCase
 from auth_module.models import User
 from rules_module.models import Rule
 from telemetry_module.models import TelemetryLog
-from vehicles_module.models import Driver, Vehicle
+from vehicles_module.models import Company, Driver, Vehicle
 
 from .models import Alert
 from .services import AlertService
@@ -41,15 +41,17 @@ class AlertsTestBase(APITestCase):
             username='driveruser', email='d@example.com', password='StrongPass123', role='driver'
         )
         self.driver = Driver.objects.create(user=self.driver_user, license_number='LIC-001')
+        self.company = Company.objects.create(name='Alerts Test Co')
         self.vehicle = Vehicle.objects.create(
-            vehicle_id='veh_alert_1', license_plate='ABC-123', assigned_manager=self.manager, driver=self.driver
+            vehicle_id='veh_alert_1', license_plate='12ب11111', assigned_manager=self.manager,
+            driver=self.driver, company=self.company,
         )
         self.rule = Rule.objects.create(
             name='High engine temperature', metric='engine_temperature', operator='gt',
             threshold=100, severity='high', created_by=self.admin,
         )
         self.log = TelemetryLog.objects.create(
-            vehicle=self.vehicle, obu_serial='OBU-TEST', timestamp='2025-07-11T14:32:01.234Z',
+            vehicle=self.vehicle, obu_serial='OBU-2026-0001', timestamp='2025-07-11T14:32:01.234Z',
             speed=60, engine_temperature=115, battery_voltage=12.5, fuel_level=50,
             latitude=0, longitude=0, odometer=1000, raw_payload={},
         )
@@ -182,6 +184,7 @@ class AlertMeAcknowledgeTests(AlertsTestBase):
         response = self.client.post(reverse('alert-me-acknowledge'), {})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+
 class AlertNotificationTests(AlertsTestBase):
 
     @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
@@ -205,9 +208,11 @@ class AlertNotificationTests(AlertsTestBase):
         from django.core import mail
 
         User.objects.filter(role='admin').update(is_active=False)
-        unassigned_vehicle = Vehicle.objects.create(vehicle_id='veh_alert_unassigned', license_plate='UNA-001')
+        unassigned_vehicle = Vehicle.objects.create(
+            vehicle_id='veh_alert_unassigned', license_plate='12ب22222', company=self.company
+        )
         log = TelemetryLog.objects.create(
-            vehicle=unassigned_vehicle, obu_serial='OBU-2', timestamp='2025-07-12T00:00:00Z',
+            vehicle=unassigned_vehicle, obu_serial='OBU-2026-0002', timestamp='2025-07-12T00:00:00Z',
             speed=10, engine_temperature=90, battery_voltage=12, fuel_level=50,
             latitude=0, longitude=0, odometer=10, raw_payload={},
         )
