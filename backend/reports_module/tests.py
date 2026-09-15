@@ -10,7 +10,7 @@ from alerts_module.services import AlertService
 from auth_module.models import User
 from rules_module.models import Rule
 from telemetry_module.models import TelemetryLog
-from vehicles_module.models import Vehicle
+from vehicles_module.models import Company, Vehicle
 
 from .services import ReportService
 
@@ -30,11 +30,14 @@ class ReportsTestBase(APITestCase):
         self.driver_user = User.objects.create_user(
             username='driveruser', email='d@example.com', password='StrongPass123', role='driver'
         )
+        self.company = Company.objects.create(name='Reports Test Co')
         self.vehicle1 = Vehicle.objects.create(
-            vehicle_id='veh_r1', license_plate='R-001', assigned_manager=self.manager,
+            vehicle_id='veh_r1', license_plate='12ب11111', assigned_manager=self.manager,
+            company=self.company,
         )
         self.vehicle2 = Vehicle.objects.create(
-            vehicle_id='veh_r2', license_plate='R-002', assigned_manager=self.other_manager,
+            vehicle_id='veh_r2', license_plate='12ب22222', assigned_manager=self.other_manager,
+            company=self.company,
         )
 
     def _auth_as(self, username, password='StrongPass123'):
@@ -97,12 +100,12 @@ class ReportAggregationTests(ReportsTestBase):
         super().setUp()
         now = timezone.now()
         TelemetryLog.objects.create(
-            vehicle=self.vehicle1, obu_serial='OBU-1', timestamp=now - timedelta(days=1),
+            vehicle=self.vehicle1, obu_serial='OBU-2026-0001', timestamp=now - timedelta(days=1),
             speed=60, engine_temperature=90, battery_voltage=12.5, fuel_level=80,
             latitude=0, longitude=0, odometer=1000, raw_payload={},
         )
         TelemetryLog.objects.create(
-            vehicle=self.vehicle1, obu_serial='OBU-1', timestamp=now,
+            vehicle=self.vehicle1, obu_serial='OBU-2026-0001', timestamp=now,
             speed=80, engine_temperature=95, battery_voltage=12.5, fuel_level=70,
             latitude=0, longitude=0, odometer=1050, raw_payload={},
         )
