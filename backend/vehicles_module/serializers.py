@@ -1,7 +1,8 @@
 from rest_framework import serializers
 
-from auth_module.models import User
-from fleet_monitoring.validators import (
+from backend.auth_module.models import User
+from backend.fleet_monitoring.validators import (
+    iran_driver_license_validator,
     iran_mobile_validator,
     iran_phone_validator,
     iran_plate_validator,
@@ -42,7 +43,7 @@ class LinkableUserSerializer(serializers.ModelSerializer):
 
 class DriverCreateSerializer(serializers.Serializer):
     user = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='driver'))
-    license_number = serializers.CharField(max_length=50)
+    license_number = serializers.CharField(max_length=10, validators=[iran_driver_license_validator])
     phone_number = serializers.CharField(
         max_length=11, required=False, allow_blank=True, validators=[iran_mobile_validator]
     )
@@ -54,7 +55,9 @@ class DriverCreateSerializer(serializers.Serializer):
 
 
 class DriverUpdateSerializer(serializers.Serializer):
-    license_number = serializers.CharField(max_length=50, required=False)
+    license_number = serializers.CharField(
+        max_length=10, required=False, validators=[iran_driver_license_validator]
+    )
     phone_number = serializers.CharField(
         max_length=11, required=False, allow_blank=True, validators=[iran_mobile_validator]
     )
@@ -105,7 +108,7 @@ class VehicleAdminUpdateSerializer(serializers.Serializer):
     assigned_manager = serializers.PrimaryKeyRelatedField(
         queryset=User.objects.filter(role='fleet_manager'), required=False, allow_null=True
     )
-    obu_serial_number = serializers.CharField(max_length=50, required=False)
+    obu_serial_number = serializers.CharField(max_length=50, required=False, allow_null=True)
     obu_firmware_version = serializers.CharField(max_length=20, required=False, allow_blank=True)
 
 
