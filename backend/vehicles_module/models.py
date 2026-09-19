@@ -3,6 +3,7 @@ from django.core.exceptions import ValidationError
 from django.db import models
 
 from fleet_monitoring.validators import (
+    iran_driver_license_validator,
     iran_mobile_validator,
     iran_phone_validator,
     iran_plate_validator,
@@ -39,7 +40,9 @@ class Driver(models.Model):
         on_delete=models.CASCADE,
         related_name='driver_profile',
     )
-    license_number = models.CharField(max_length=50, unique=True)
+    license_number = models.CharField(
+        max_length=10, unique=True, validators=[iran_driver_license_validator]
+    )
     phone_number = models.CharField(
         max_length=11, blank=True, validators=[iran_mobile_validator]
     )
@@ -58,6 +61,18 @@ class Driver(models.Model):
         if self.user_id and not self.user.is_driver:
             raise ValidationError({'user': 'Linked user must have the driver role'})
 
+        if self.phone_number:
+            conflict = Driver.objects.filter(phone_number=self.phone_number)
+            if self.pk:
+                conflict = conflict.exclude(pk=self.pk)
+            if conflict.exists():
+                raise ValidationError({'phone_number': 'phone_number already exists'})
+
+    def unique_error_message(self, model_class, unique_check):
+        if unique_check == ('license_number',):
+            return ValidationError('license_number already exists', code='unique')
+        return super().unique_error_message(model_class, unique_check)
+
 
 class Vehicle(models.Model):
 
@@ -67,17 +82,22 @@ class Vehicle(models.Model):
         INACTIVE = 'inactive', 'Inactive'
         DECOMMISSIONED = 'decommissioned', 'Decommissioned'
 
-    vehicle_id = models.CharField(max_length=50, unique=True, db_index=True)
+    vehicle_id = models.CharField(
+        max_length=50, unique=True, db_index=True,
+        error_messages={'unique': 'vehicle_id already exists'},
+    )
 
     company = models.ForeignKey(
         Company, on_delete=models.PROTECT, related_name='vehicles',
     )
 
     license_plate = models.CharField(
-        max_length=8, unique=True, validators=[iran_plate_validator]
+        max_length=8, unique=True, validators=[iran_plate_validator],
+        error_messages={'unique': 'license_plate already exists'},
     )
     vin = models.CharField(
-        max_length=17, unique=True, null=True, blank=True, validators=[vin_validator]
+        max_length=17, unique=True, null=True, blank=True, validators=[vin_validator],
+        error_messages={'unique': 'vin already exists'},
     )
     make = models.CharField(max_length=50, blank=True)
     model = models.CharField(max_length=50, blank=True)
@@ -96,7 +116,6 @@ class Vehicle(models.Model):
         null=True, blank=True,
         on_delete=models.SET_NULL,
         related_name='managed_vehicles',
-        limit_choices_to={'role': 'fleet_manager'},
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -116,13 +135,21 @@ class Vehicle(models.Model):
 
     def clean(self):
         if self.assigned_manager_id and not self.assigned_manager.is_fleet_manager:
-            raise ValidationError({'assigned_manager': 'Assigned manager must have the fleet_manager role'})
+            original_manager_id = (
+                Vehicle.objects.filter(pk=self.pk).values_list('assigned_manager_id', flat=True).first()
+                if self.pk else None
+            )
+            if original_manager_id != self.assigned_manager_id:
+                raise ValidationError({'assigned_manager': 'Assigned manager must have the fleet_manager role'})
 
 
 class OBU(models.Model):
 
     vehicle = models.OneToOneField(Vehicle, on_delete=models.CASCADE, related_name='obu')
-    serial_number = models.CharField(max_length=50, unique=True, validators=[obu_serial_validator])
+    serial_number = models.CharField(
+        max_length=50, unique=True, validators=[obu_serial_validator],
+        error_messages={'unique': 'serial_number already exists'},
+    )
     firmware_version = models.CharField(max_length=20, blank=True)
     is_active = models.BooleanField(default=True)
     installed_at = models.DateTimeField(auto_now_add=True)
