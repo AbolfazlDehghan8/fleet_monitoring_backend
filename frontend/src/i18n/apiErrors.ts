@@ -24,6 +24,7 @@ const FIELD_LABEL_KEYS: Record<string, TranslationKey> = {
   vehicle_id: 'apiError.field.vehicle_id',
   serial_number: 'apiError.field.serial_number',
   license_number: 'apiError.field.license_number',
+  phone_number: 'apiError.field.phone_number',
 };
 
 /** Exact raw backend message -> translation key. */
@@ -72,6 +73,7 @@ const EXACT_MESSAGES: Record<string, TranslationKey> = {
   'Refresh token has been revoked': 'apiError.refreshTokenRevoked',
   'Refresh token has expired': 'apiError.refreshTokenExpired',
   'Current password is incorrect': 'apiError.currentPasswordIncorrect',
+  'New password must be different from the current password': 'apiError.newPasswordSameAsOld',
   'Access token has expired': 'apiError.accessTokenExpired',
   'Invalid token': 'apiError.invalidToken',
   'This field is required.': 'apiError.fieldRequired',
@@ -82,6 +84,7 @@ const EXACT_MESSAGES: Record<string, TranslationKey> = {
   'This password is entirely numeric.': 'apiError.passwordEntirelyNumeric',
   'A valid number is required.': 'apiError.invalidNumber',
   'A valid integer is required.': 'apiError.invalidInteger',
+  'License number must be exactly 10 digits.': 'apiError.invalidLicenseNumber',
 };
 
 /** Parametrized backend messages, matched with a regex. */
@@ -93,6 +96,12 @@ const PATTERN_MESSAGES: Array<{
   {
     // e.g. "license_plate already exists" (from _integrity_error_to_validation)
     pattern: /^(\w+) already exists$/i,
+    key: 'apiError.fieldAlreadyExists',
+    vars: (m, t) => ({ field: fieldLabel(m[1], t) }),
+  },
+  {
+    // Django's built-in username message, e.g. "A user with that username already exists."
+    pattern: /^A user with that (\w+) already exists\.$/i,
     key: 'apiError.fieldAlreadyExists',
     vars: (m, t) => ({ field: fieldLabel(m[1], t) }),
   },
@@ -182,4 +191,30 @@ export function getApiErrorMessage(body: ApiErrorBody | undefined, t: Translate)
     return value.map((m) => translateOne(m, t)).join(' ');
   }
   return translateOne(value, t);
+}
+
+/**
+ * Splits a DRF validation body into per-field messages plus a general message,
+ * so forms can show each error under its own input (e.g. a duplicate username
+ * under the username field and a duplicate email under the email field).
+ */
+export function getApiFieldErrors(
+  body: ApiErrorBody | undefined,
+  t: Translate,
+): { fields: Record<string, string>; general?: string } {
+  const fields: Record<string, string> = {};
+  if (!body) return { fields };
+
+  const generalParts: string[] = [];
+  for (const [key, value] of Object.entries(body as Record<string, string[] | string>)) {
+    if (!value || (Array.isArray(value) && value.length === 0)) continue;
+    const messages = Array.isArray(value) ? value : [value];
+    const text = messages.map((m) => translateOne(String(m), t)).join(' ');
+    if (key === 'detail' || key === 'error' || key === 'non_field_errors') {
+      generalParts.push(text);
+    } else {
+      fields[key] = text;
+    }
+  }
+  return { fields, general: generalParts.length ? generalParts.join(' ') : undefined };
 }

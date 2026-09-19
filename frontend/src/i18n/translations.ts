@@ -238,8 +238,10 @@ const en = {
   'driverForm.unableToLoad': 'Unable to load driver',
   'driverForm.userRequired': 'A linked user is required',
   'driverForm.licenseRequired': 'License number is required',
+  'driverForm.licenseNumberErr': 'Enter a valid Iranian license number (exactly 10 digits), e.g. 1234567890',
   'driverForm.licenseNumber': 'License Number',
   'driverForm.phoneNumber': 'Phone Number',
+  'driverForm.phoneRequired': 'Phone number is required',
   'driverForm.phoneNumberErr': 'Enter a valid Iranian mobile number (11 digits, starting with 09), e.g. 09123456789',
   'driverForm.driverActive': 'Driver Active',
   'driverForm.linkedUser': 'Linked User',
@@ -504,6 +506,7 @@ const en = {
   'profile.passwordChanged': 'Password changed',
   'profile.couldNotChangePassword': 'Could not change password',
   'profile.errorCurrentRequired': 'Current password is required',
+  'profile.errorSamePassword': 'New password must be different from the current password',
 
   // Driver form — supplemental keys
   'driverForm.loadingUsers': 'Loading users…',
@@ -558,6 +561,7 @@ const en = {
   'apiError.refreshTokenRevoked': 'The refresh token has been revoked or does not exist.',
   'apiError.refreshTokenExpired': 'The refresh token has expired.',
   'apiError.currentPasswordIncorrect': 'The current password is incorrect.',
+  'apiError.newPasswordSameAsOld': 'New password must be different from the current password.',
   'apiError.accessTokenExpired': 'Your session has expired. Please sign in again.',
   'apiError.invalidToken': 'Invalid session token.',
   'apiError.fieldRequired': 'This field is required.',
@@ -573,6 +577,7 @@ const en = {
   'apiError.maxLengthField': 'Must be at most {count} characters.',
   'apiError.invalidNumber': 'Enter a valid number.',
   'apiError.invalidInteger': 'Enter a valid whole number.',
+  'apiError.invalidLicenseNumber': 'License number must be exactly 10 digits.',
 
   // Field names referenced inside apiError messages
   'apiError.field.username': 'Username',
@@ -582,6 +587,7 @@ const en = {
   'apiError.field.vehicle_id': 'Vehicle ID',
   'apiError.field.serial_number': 'OBU serial number',
   'apiError.field.license_number': 'License number',
+  'apiError.field.phone_number': 'Phone number',
 } as const;
 
 const fa: Record<keyof typeof en, string> = {
@@ -807,8 +813,10 @@ const fa: Record<keyof typeof en, string> = {
   'driverForm.unableToLoad': 'دریافت اطلاعات راننده ممکن نشد',
   'driverForm.userRequired': 'اتصال به یک کاربر الزامی است',
   'driverForm.licenseRequired': 'شماره گواهینامه الزامی است',
+  'driverForm.licenseNumberErr': 'شماره گواهینامه معتبر ایران وارد کنید (دقیقاً ۱۰ رقم)، مثال: 1234567890',
   'driverForm.licenseNumber': 'شماره گواهینامه',
   'driverForm.phoneNumber': 'شماره تماس',
+  'driverForm.phoneRequired': 'شماره تماس الزامی است',
   'driverForm.phoneNumberErr': 'شماره موبایل معتبر ایران وارد کنید (۱۱ رقم، شروع با 09)، مثال: 09123456789',
   'driverForm.driverActive': 'راننده فعال است',
   'driverForm.linkedUser': 'کاربر متصل‌شده',
@@ -1062,6 +1070,7 @@ const fa: Record<keyof typeof en, string> = {
   'profile.passwordChanged': 'رمز عبور تغییر کرد',
   'profile.couldNotChangePassword': 'تغییر رمز عبور ممکن نشد',
   'profile.errorCurrentRequired': 'رمز عبور فعلی الزامی است',
+  'profile.errorSamePassword': 'رمز عبور جدید باید با رمز عبور فعلی متفاوت باشد',
 
   // فرم راننده — کلیدهای تکمیلی
   'driverForm.loadingUsers': 'در حال بارگذاری کاربران…',
@@ -1116,6 +1125,7 @@ const fa: Record<keyof typeof en, string> = {
   'apiError.refreshTokenRevoked': 'توکن تازه‌سازی باطل شده یا وجود ندارد.',
   'apiError.refreshTokenExpired': 'توکن تازه‌سازی منقضی شده است.',
   'apiError.currentPasswordIncorrect': 'رمز عبور فعلی نادرست است.',
+  'apiError.newPasswordSameAsOld': 'رمز عبور جدید باید با رمز عبور فعلی متفاوت باشد.',
   'apiError.accessTokenExpired': 'نشست شما منقضی شده است. دوباره وارد شوید.',
   'apiError.invalidToken': 'نشست نامعتبر است.',
   'apiError.fieldRequired': 'این فیلد الزامی است.',
@@ -1131,6 +1141,7 @@ const fa: Record<keyof typeof en, string> = {
   'apiError.maxLengthField': 'باید حداکثر {count} کاراکتر باشد.',
   'apiError.invalidNumber': 'یک عدد معتبر وارد کنید.',
   'apiError.invalidInteger': 'یک عدد صحیح معتبر وارد کنید.',
+  'apiError.invalidLicenseNumber': 'شماره گواهینامه باید دقیقاً ۱۰ رقم باشد.',
 
   // نام فیلدها برای استفاده داخل پیام‌های apiError
   'apiError.field.username': 'نام کاربری',
@@ -1140,6 +1151,7 @@ const fa: Record<keyof typeof en, string> = {
   'apiError.field.vehicle_id': 'شناسه خودرو',
   'apiError.field.serial_number': 'شماره سریال OBU',
   'apiError.field.license_number': 'شماره گواهینامه',
+  'apiError.field.phone_number': 'شماره تلفن',
 };
 
 export const translations = { en, fa } as const;

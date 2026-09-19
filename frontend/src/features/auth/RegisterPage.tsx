@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
-import { getApiErrorMessage } from '@/i18n/apiErrors';
+import { getApiErrorMessage, getApiFieldErrors } from '@/i18n/apiErrors';
 import { ApiError } from '@/types/common';
 
 function useRegisterSchema() {
@@ -55,6 +55,7 @@ export function RegisterPage() {
   const {
     register,
     handleSubmit,
+    setError,
     formState: { errors, isSubmitting },
   } = useForm<RegisterFormValues>({ resolver: zodResolver(registerSchema) });
 
@@ -65,7 +66,20 @@ export function RegisterPage() {
       setDone(true);
     } catch (error) {
       if (error instanceof ApiError) {
-        setServerError(getApiErrorMessage(error.body, t) ?? t('register.errorCreate'));
+        const { fields, general } = getApiFieldErrors(error.body, t);
+        const formFields = ['username', 'email', 'first_name', 'last_name', 'password', 'password_confirm'] as const;
+        let handled = false;
+        for (const name of formFields) {
+          if (fields[name]) {
+            setError(name, { type: 'server', message: fields[name] });
+            handled = true;
+          }
+        }
+        if (!handled) {
+          setServerError(general ?? getApiErrorMessage(error.body, t) ?? t('register.errorCreate'));
+        } else if (general) {
+          setServerError(general);
+        }
       } else {
         setServerError(t('login.errorNetwork'));
       }
@@ -153,10 +167,12 @@ export function RegisterPage() {
                     <div className="space-y-1.5">
                       <Label htmlFor="first_name">{t('register.firstName')}</Label>
                       <Input id="first_name" autoComplete="given-name" {...register('first_name')} />
+                      {errors.first_name && <p className="text-xs text-destructive">{errors.first_name.message}</p>}
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="last_name">{t('register.lastName')}</Label>
                       <Input id="last_name" autoComplete="family-name" {...register('last_name')} />
+                      {errors.last_name && <p className="text-xs text-destructive">{errors.last_name.message}</p>}
                     </div>
                   </div>
 

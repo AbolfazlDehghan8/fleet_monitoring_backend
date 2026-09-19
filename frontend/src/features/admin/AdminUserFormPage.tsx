@@ -183,9 +183,11 @@ export function AdminUserFormPage() {
                   control={editForm.control}
                   name="role"
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select key={field.value} value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder={t('common.role')}>
+                          {field.value ? t(`role.${field.value}`) : null}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {Object.values(ROLES).map((role) => (
@@ -197,6 +199,9 @@ export function AdminUserFormPage() {
                     </Select>
                   )}
                 />
+                {editForm.formState.errors.role && (
+                  <p className="text-xs text-destructive">{editForm.formState.errors.role.message}</p>
+                )}
               </div>
               <div className="flex items-center justify-between rounded-md border border-input px-3 py-2">
                 <Label htmlFor="is_active" className="cursor-pointer">
@@ -260,9 +265,11 @@ export function AdminUserFormPage() {
                   control={createForm.control}
                   name="role"
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select key={field.value} value={field.value} onValueChange={field.onChange}>
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue placeholder={t('common.role')}>
+                          {field.value ? t(`role.${field.value}`) : null}
+                        </SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {Object.values(ROLES).map((role) => (
@@ -274,6 +281,9 @@ export function AdminUserFormPage() {
                     </Select>
                   )}
                 />
+                {createForm.formState.errors.role && (
+                  <p className="text-xs text-destructive">{createForm.formState.errors.role.message}</p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">

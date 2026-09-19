@@ -19,6 +19,7 @@ import { ROLES } from '@/constants/roles';
 import { VEHICLE_STATUSES } from '@/constants/statuses';
 import { useAuth } from '@/features/auth/AuthContext';
 import type { TranslationKey } from '@/i18n/translations';
+import type { VehicleUpdateRequest } from '@/types/vehicles';
 import { ApiError } from '@/types/common';
 import { getApiErrorMessage } from '@/i18n/apiErrors';
 import { IRAN_PLATE_REGEX, OBU_SERIAL_REGEX, VIN_REGEX } from '@/utils/iranValidators';
@@ -52,7 +53,16 @@ function useVehicleSchema(
       .refine((val) => !val || VIN_REGEX.test(val), { message: t('vehicleForm.vinErr') }),
     make: z.string().max(50, t('validation.maxLength', { max: 50 })).optional().or(z.literal('')),
     model: z.string().max(50, t('validation.maxLength', { max: 50 })).optional().or(z.literal('')),
-    year: z.coerce.number().int().min(yearMin, t('vehicleForm.yearErr')).max(yearMax, t('vehicleForm.yearErr')).optional().or(z.nan()),
+    year: z.preprocess(
+      // A cleared/never-touched year field arrives here as '', null, or NaN
+      // (see the `year: Number.NaN` default/reset value below) — all of
+      // these mean "no year entered", not "year 0". Number('') is 0, so
+      // without this step z.coerce.number() would coerce a blank field to
+      // 0 and fail the min-year check below, wrongly telling the user to
+      // "enter a valid year" when they just wanted to leave it empty.
+      (val) => (val === '' || val === null || val === undefined || (typeof val === 'number' && Number.isNaN(val)) ? undefined : val),
+      z.coerce.number().int().min(yearMin, t('vehicleForm.yearErr')).max(yearMax, t('vehicleForm.yearErr')).optional(),
+    ),
     status: z.enum(['active', 'maintenance', 'inactive', 'decommissioned']),
     driver: z.string(),
     assigned_manager: z.string(),
@@ -123,7 +133,7 @@ export function VehicleFormPage() {
     register,
     handleSubmit,
     control,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, dirtyFields },
   } = useForm<VehicleFormValues>({
     resolver: zodResolver(vehicleSchema),
     values: vehicleQuery.data
@@ -175,7 +185,19 @@ export function VehicleFormPage() {
     if (submitLockRef.current) return;
     submitLockRef.current = true;
 
-    const enteredYear = Number.isNaN(values.year) ? null : (values.year as number);
+    // Defensive: only ever treat a value as a real id if it's a positive
+    // number. Anything else (the NONE sentinel, an empty string, or any
+    // other unexpected value) becomes `null`. Without this, `Number('')`
+    // evaluates to `0`, which the backend then rejects as an invalid
+    // driver/manager id instead of clearing the assignment.
+    const toIdOrNull = (raw: string): number | null => {
+      if (!raw || raw === NONE) return null;
+      const id = Number(raw);
+      return Number.isInteger(id) && id > 0 ? id : null;
+    };
+
+    const enteredYear =
+      values.year === undefined || values.year === null || Number.isNaN(values.year) ? null : values.year;
     const gregorianYear =
       enteredYear === null ? null : language === 'fa' ? jalaliYearToGregorian(enteredYear) : enteredYear;
 
@@ -186,15 +208,39 @@ export function VehicleFormPage() {
       model: values.model || '',
       year: gregorianYear,
       status: values.status,
-      driver: values.driver === NONE ? null : Number(values.driver),
-      ...(isAdmin ? { assigned_manager: values.assigned_manager === NONE ? null : Number(values.assigned_manager) } : {}),
+      driver: toIdOrNull(values.driver),
+      ...(isAdmin ? { assigned_manager: toIdOrNull(values.assigned_manager) } : {}),
       obu_serial_number: values.obu_serial_number || undefined,
       obu_firmware_version: values.obu_firmware_version || '',
     };
 
     try {
       if (isEditing && vehicleId !== undefined) {
-        await updateMutation.mutateAsync(payload);
+        // Send only the fields the user actually touched. The backend
+        // treats this as a partial update and leaves everything else on
+        // the vehicle exactly as it was. Resubmitting every field
+        // (including ones the user never touched, like `driver` or
+        // `assigned_manager`) makes the server re-validate values that
+        // aren't even part of this edit — e.g. an already-assigned
+        // manager whose role has since changed would block the whole
+        // save with a confusing error, even though the user only meant
+        // to change the model.
+        const dirtyKeys = Object.keys(dirtyFields) as (keyof VehicleFormValues)[];
+        const updatePayload: VehicleUpdateRequest = {};
+        for (const key of dirtyKeys) {
+          if (key in payload) {
+            (updatePayload as Record<string, unknown>)[key] = (payload as Record<string, unknown>)[key];
+          }
+        }
+        // The OBU serial number and firmware version are saved together as
+        // one record server-side, so if either changed, send both so the
+        // backend has the complete pair to validate and store.
+        if (dirtyFields.obu_serial_number || dirtyFields.obu_firmware_version) {
+          updatePayload.obu_serial_number = payload.obu_serial_number;
+          updatePayload.obu_firmware_version = payload.obu_firmware_version;
+        }
+
+        await updateMutation.mutateAsync(updatePayload);
         toast({ title: t('vehicleForm.vehicleUpdated'), variant: 'success' });
       } else {
         await createMutation.mutateAsync({ vehicle_id: values.vehicle_id, ...payload });
@@ -316,21 +362,37 @@ export function VehicleFormPage() {
                 <Controller
                   control={control}
                   name="driver"
-                  render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
-                      <SelectTrigger>
-                        <SelectValue placeholder={t('vehicleForm.unassigned')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={NONE}>{t('vehicleForm.unassigned')}</SelectItem>
-                        {(driversQuery.data ?? []).map((d) => (
-                          <SelectItem key={d.id} value={String(d.id)}>
-                            {d.full_name} · {d.license_number}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
+                  render={({ field }) => {
+                    const selectedDriver = (driversQuery.data ?? []).find(
+                      (d) => String(d.id) === field.value,
+                    );
+                    // Radix only learns an item's label once that <SelectItem>
+                    // has actually mounted, which normally only happens after
+                    // the dropdown is opened at least once. On first load
+                    // that means a pre-selected driver shows as "Unassigned"
+                    // until the user clicks the dropdown. Passing the label
+                    // explicitly here makes the current selection display
+                    // correctly right away.
+                    const label =
+                      field.value !== NONE && selectedDriver
+                        ? `${selectedDriver.full_name} · ${selectedDriver.license_number}`
+                        : t('vehicleForm.unassigned');
+                    return (
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t('vehicleForm.unassigned')}>{label}</SelectValue>
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NONE}>{t('vehicleForm.unassigned')}</SelectItem>
+                          {(driversQuery.data ?? []).map((d) => (
+                            <SelectItem key={d.id} value={String(d.id)}>
+                              {d.full_name} · {d.license_number}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    );
+                  }}
                 />
               </div>
 
@@ -340,21 +402,26 @@ export function VehicleFormPage() {
                   <Controller
                     control={control}
                     name="assigned_manager"
-                    render={({ field }) => (
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <SelectTrigger>
-                          <SelectValue placeholder={t('vehicleForm.unassigned')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NONE}>{t('vehicleForm.unassigned')}</SelectItem>
-                          {managers.map((m) => (
-                            <SelectItem key={m.id} value={String(m.id)}>
-                              {m.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
+                    render={({ field }) => {
+                      const selectedManager = managers.find((m) => String(m.id) === field.value);
+                      const label =
+                        field.value !== NONE && selectedManager ? selectedManager.label : t('vehicleForm.unassigned');
+                      return (
+                        <Select value={field.value} onValueChange={field.onChange}>
+                          <SelectTrigger>
+                            <SelectValue placeholder={t('vehicleForm.unassigned')}>{label}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value={NONE}>{t('vehicleForm.unassigned')}</SelectItem>
+                            {managers.map((m) => (
+                              <SelectItem key={m.id} value={String(m.id)}>
+                                {m.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      );
+                    }}
                   />
                 </div>
               )}

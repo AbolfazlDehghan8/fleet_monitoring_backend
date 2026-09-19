@@ -38,3 +38,9 @@ export const VIN_REGEX = /^[A-HJ-NPR-Z0-9]{17}$/i;
  * `backend/fleet_monitoring/validators.py`.
  */
 export const OBU_SERIAL_REGEX = /^OBU-\d{4}-\d{4,}$/i;
+
+/**
+ * Driver's license number: exactly 10 digits, per the Iranian driver's
+ * license format. e.g. 1234567890
+ */
+export const IRAN_LICENSE_NUMBER_REGEX = /^\d{10}$/;

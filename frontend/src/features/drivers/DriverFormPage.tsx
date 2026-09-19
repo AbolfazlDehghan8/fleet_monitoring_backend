@@ -23,24 +23,28 @@ import {
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
 import { getApiErrorMessage } from '@/i18n/apiErrors';
-import { IRAN_MOBILE_REGEX } from '@/utils/iranValidators';
+import { IRAN_LICENSE_NUMBER_REGEX, IRAN_MOBILE_REGEX } from '@/utils/iranValidators';
 
 function useSchemas(t: (key: TranslationKey, vars?: Record<string, string | number>) => string) {
   const phoneField = z
     .string()
+    .min(1, t('driverForm.phoneRequired'))
     .max(11, t('driverForm.phoneNumberErr'))
-    .regex(IRAN_MOBILE_REGEX, t('driverForm.phoneNumberErr'))
-    .optional()
-    .or(z.literal(''));
+    .regex(IRAN_MOBILE_REGEX, t('driverForm.phoneNumberErr'));
+
+  const licenseField = z
+    .string()
+    .min(1, t('driverForm.licenseRequired'))
+    .regex(IRAN_LICENSE_NUMBER_REGEX, t('driverForm.licenseNumberErr'));
 
   const createSchema = z.object({
     user: z.string().min(1, t('driverForm.userRequired')),
-    license_number: z.string().min(1, t('driverForm.licenseRequired')).max(50, t('validation.maxLength', { max: 50 })),
+    license_number: licenseField,
     phone_number: phoneField,
   });
 
   const editSchema = z.object({
-    license_number: z.string().min(1, t('driverForm.licenseRequired')).max(50, t('validation.maxLength', { max: 50 })),
+    license_number: licenseField,
     phone_number: phoneField,
     is_active: z.boolean(),
   });
@@ -48,8 +52,8 @@ function useSchemas(t: (key: TranslationKey, vars?: Record<string, string | numb
   return { createSchema, editSchema };
 }
 
-type CreateValues = { user: string; license_number: string; phone_number?: string };
-type EditValues = { license_number: string; phone_number?: string; is_active: boolean };
+type CreateValues = { user: string; license_number: string; phone_number: string };
+type EditValues = { license_number: string; phone_number: string; is_active: boolean };
 
 export function DriverFormPage() {
   const { t } = useLanguage();
@@ -101,7 +105,7 @@ export function DriverFormPage() {
       await createMutation.mutateAsync({
         user: Number(values.user),
         license_number: values.license_number,
-        phone_number: values.phone_number || undefined,
+        phone_number: values.phone_number,
       });
       toast({ title: t('driverForm.profileCreated'), variant: 'success' });
       navigate('/drivers');
@@ -149,7 +153,14 @@ export function DriverFormPage() {
             <form onSubmit={editForm.handleSubmit(onUpdate)} className="space-y-5" noValidate>
               <div className="space-y-1.5">
                 <Label htmlFor="license_number">{t('driverForm.licenseNumber')}</Label>
-                <Input id="license_number" placeholder="DL-001" {...editForm.register('license_number')} />
+                <Input
+                  id="license_number"
+                  placeholder="1234567890"
+                  maxLength={10}
+                  inputMode="numeric"
+                  dir="ltr"
+                  {...editForm.register('license_number')}
+                />
                 {editForm.formState.errors.license_number && (
                   <p className="text-xs text-destructive">{editForm.formState.errors.license_number.message}</p>
                 )}
@@ -236,7 +247,14 @@ export function DriverFormPage() {
 
               <div className="space-y-1.5">
                 <Label htmlFor="license_number">{t('driverForm.licenseNumber')}</Label>
-                <Input id="license_number" placeholder="DL-001" {...createForm.register('license_number')} />
+                <Input
+                  id="license_number"
+                  placeholder="1234567890"
+                  maxLength={10}
+                  inputMode="numeric"
+                  dir="ltr"
+                  {...createForm.register('license_number')}
+                />
                 {createForm.formState.errors.license_number && (
                   <p className="text-xs text-destructive">
                     {createForm.formState.errors.license_number.message}

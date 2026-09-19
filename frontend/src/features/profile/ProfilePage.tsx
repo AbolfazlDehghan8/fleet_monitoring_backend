@@ -38,6 +38,10 @@ function useSchemas(t: (key: TranslationKey, vars?: Record<string, string | numb
     .refine((data) => data.new_password === data.new_password_confirm, {
       message: t('register.errorPasswordMismatch'),
       path: ['new_password_confirm'],
+    })
+    .refine((data) => data.old_password !== data.new_password, {
+      message: t('profile.errorSamePassword'),
+      path: ['new_password'],
     });
 
   return { profileSchema, passwordSchema };
