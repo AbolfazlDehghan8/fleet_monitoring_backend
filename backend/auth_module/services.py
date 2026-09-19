@@ -8,6 +8,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from .models import RefreshToken, User
 
 
@@ -278,6 +279,9 @@ class UserService:
     def change_password(user, old_password, new_password):
         if not user.check_password(old_password):
             raise AuthenticationFailed('Current password is incorrect')
+
+        if old_password == new_password:
+            raise DRFValidationError({'new_password': ['New password must be different from the current password']})
 
         try:
             validate_password(new_password, user=user)
