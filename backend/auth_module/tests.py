@@ -30,8 +30,35 @@ class RegisterTests(APITestCase):
 
     def test_register_duplicate_username(self):
         self.client.post(self.url, self.payload)
+        self.payload['email'] = 'other@example.com'
         response = self.client.post(self.url, self.payload)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['username'], ['Username already exists'])
+        self.assertNotIn('email', response.data)
+
+    def test_register_duplicate_email(self):
+        self.client.post(self.url, self.payload)
+        self.payload['username'] = 'other_driver'
+        response = self.client.post(self.url, self.payload)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data['email'], ['Email already exists'])
+        self.assertNotIn('username', response.data)
+
+    def test_register_duplicate_username_and_email_reports_both(self):
+        self.client.post(self.url, self.payload)
+        response = self.client.post(self.url, self.payload)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('username', response.data)
+        self.assertIn('email', response.data)
+
+    def test_register_duplicate_is_case_insensitive(self):
+        self.client.post(self.url, self.payload)
+        self.payload['username'] = 'DRIVER01'
+        self.payload['email'] = 'Driver01@Example.com'
+        response = self.client.post(self.url, self.payload)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('username', response.data)
+        self.assertIn('email', response.data)
 
     def test_register_role_field_is_ignored_not_validated(self):
         self.payload['role'] = 'super_admin'
@@ -126,6 +153,16 @@ class ProfileTests(APITestCase):
             'new_password_confirm': 'NewStrongPass456',
         })
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_change_password_same_as_old_password_rejected(self):
+        response = self.client.post(reverse('change-password'), {
+            'old_password': 'StrongPass123',
+            'new_password': 'StrongPass123',
+            'new_password_confirm': 'StrongPass123',
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('new_password', response.data)
+        self.assertTrue(User.objects.get(pk=self.user.pk).check_password('StrongPass123'))
 
 
 class AdminUserManagementTests(APITestCase):
