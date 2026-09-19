@@ -351,7 +351,7 @@ class CompanyService:
 
 def _integrity_error_to_validation(exc):
     message = str(exc).lower()
-    for field in ('license_plate', 'vin', 'vehicle_id', 'serial_number', 'license_number'):
+    for field in ('license_plate', 'vin', 'vehicle_id', 'serial_number', 'license_number', 'phone_number'):
         if field in message:
             return ValidationError({field: f'{field} already exists'})
     return ValidationError({'detail': 'Could not save record due to a conflicting record'})
