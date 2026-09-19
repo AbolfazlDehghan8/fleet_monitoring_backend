@@ -39,3 +39,10 @@ obu_serial_validator = RegexValidator(
     code='invalid_obu_serial',
     flags=re.IGNORECASE,
 )
+
+
+iran_driver_license_validator = RegexValidator(
+    regex=r'^\d{10}$',
+    message='شماره گواهینامه باید دقیقاً ۱۰ رقم باشد.',
+    code='invalid_iran_license_number',
+)
