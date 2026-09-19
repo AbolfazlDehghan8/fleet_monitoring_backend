@@ -240,9 +240,77 @@ class DriverEndpointTests(VehicleTestBase):
         )
         self._login_as('admin01')
         response = self.client.post(
-            reverse('driver-list-create'), {'user': new_user.id, 'license_number': 'DL-099'}
+            reverse('driver-list-create'), {'user': new_user.id, 'license_number': '1234509909'}
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+    def test_invalid_license_number_format_rejected(self):
+        new_user = User.objects.create_user(
+            username='drv15', email='drv15@example.com', password='StrongPass123', role='driver'
+        )
+        self._login_as('admin01')
+        response = self.client.post(
+            reverse('driver-list-create'), {'user': new_user.id, 'license_number': 'DL-099'}
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('license_number', response.data)
+
+    def test_duplicate_phone_number_rejected(self):
+        first_user = User.objects.create_user(
+            username='drv16', email='drv16@example.com', password='StrongPass123', role='driver'
+        )
+        second_user = User.objects.create_user(
+            username='drv17', email='drv17@example.com', password='StrongPass123', role='driver'
+        )
+        self._login_as('admin01')
+        first = self.client.post(
+            reverse('driver-list-create'),
+            {'user': first_user.id, 'license_number': '1111111111', 'phone_number': '09123456789'},
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        second = self.client.post(
+            reverse('driver-list-create'),
+            {'user': second_user.id, 'license_number': '2222222222', 'phone_number': '09123456789'},
+        )
+        self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('phone_number', second.data)
+
+    def test_two_drivers_can_both_leave_phone_number_blank(self):
+        first_user = User.objects.create_user(
+            username='drv18', email='drv18@example.com', password='StrongPass123', role='driver'
+        )
+        second_user = User.objects.create_user(
+            username='drv19', email='drv19@example.com', password='StrongPass123', role='driver'
+        )
+        self._login_as('admin01')
+        first = self.client.post(
+            reverse('driver-list-create'), {'user': first_user.id, 'license_number': '3333333333'}
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        second = self.client.post(
+            reverse('driver-list-create'), {'user': second_user.id, 'license_number': '4444444444'}
+        )
+        self.assertEqual(second.status_code, status.HTTP_201_CREATED)
+
+    def test_duplicate_license_number_rejected_on_update(self):
+        first_user = User.objects.create_user(
+            username='drv20', email='drv20@example.com', password='StrongPass123', role='driver'
+        )
+        second_user = User.objects.create_user(
+            username='drv21', email='drv21@example.com', password='StrongPass123', role='driver'
+        )
+        Driver.objects.create(user=first_user, license_number='5555555555')
+        other_driver = Driver.objects.create(user=second_user, license_number='6666666666')
+        self._login_as('admin01')
+
+        response = self.client.patch(
+            reverse('driver-detail', args=[other_driver.id]), {'license_number': '5555555555'}
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('license_number', response.data)
+        self.assertEqual(response.data['license_number'], ['license_number already exists'])
 
     def test_fleet_manager_sees_only_drivers_of_their_vehicles(self):
         Vehicle.objects.create(
