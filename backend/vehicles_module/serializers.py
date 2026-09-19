@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
-from backend.auth_module.models import User
-from backend.fleet_monitoring.validators import (
+from auth_module.models import User
+from fleet_monitoring.validators import (
     iran_driver_license_validator,
     iran_mobile_validator,
     iran_phone_validator,
