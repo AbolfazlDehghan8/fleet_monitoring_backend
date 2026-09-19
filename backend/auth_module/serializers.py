@@ -9,13 +9,27 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 
-class RegisterSerializer(serializers.ModelSerializer):
+class UniqueUserFieldsMixin:
+    def validate_username(self, value):
+        if User.objects.filter(username__iexact=value).exists():
+            raise serializers.ValidationError('Username already exists')
+        return value
+
+    def validate_email(self, value):
+        value = value.strip()
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError('Email already exists')
+        return value
+
+
+class RegisterSerializer(UniqueUserFieldsMixin, serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = User
         fields = ['username', 'email', 'password', 'password_confirm', 'first_name', 'last_name']
+        extra_kwargs = {'username': {'validators': []}, 'email': {'validators': []}}
 
     def validate(self, data):
         if data['password'] != data['password_confirm']:
@@ -46,16 +60,21 @@ class ChangePasswordSerializer(serializers.Serializer):
     def validate(self, data):
         if data['new_password'] != data['new_password_confirm']:
             raise serializers.ValidationError({'new_password_confirm': 'Passwords do not match'})
+        if data['old_password'] == data['new_password']:
+            raise serializers.ValidationError(
+                {'new_password': 'New password must be different from the current password'}
+            )
         return data
 
 
-class AdminUserCreateSerializer(serializers.ModelSerializer):
+class AdminUserCreateSerializer(UniqueUserFieldsMixin, serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True, min_length=8)
 
     class Meta:
         model = User
         fields = ['username', 'email', 'password', 'password_confirm', 'role', 'first_name', 'last_name']
+        extra_kwargs = {'username': {'validators': []}, 'email': {'validators': []}}
 
     def validate(self, data):
         if data['password'] != data['password_confirm']:
