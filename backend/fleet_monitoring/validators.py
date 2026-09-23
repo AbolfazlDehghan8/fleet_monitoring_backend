@@ -1,6 +1,10 @@
 import re
 
+from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
+from django.utils import timezone
+
+from .persian import is_valid_iran_national_code
 
 iran_mobile_validator = RegexValidator(
     regex=r'^09\d{9}$',
@@ -40,9 +44,36 @@ obu_serial_validator = RegexValidator(
     flags=re.IGNORECASE,
 )
 
-
 iran_driver_license_validator = RegexValidator(
     regex=r'^\d{10}$',
     message='شماره گواهینامه باید دقیقاً ۱۰ رقم باشد.',
     code='invalid_iran_license_number',
 )
+
+
+def iran_national_code_validator(value):
+    if not is_valid_iran_national_code(value):
+        raise ValidationError(
+            'کد ملی نامعتبر است. کد ملی باید ۱۰ رقم و دارای ارقام کنترلی صحیح باشد.',
+            code='invalid_iran_national_code',
+        )
+
+
+_VEHICLE_ID_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,49}')
+
+
+def validate_vehicle_id(value):
+    if not _VEHICLE_ID_RE.fullmatch(value or ''):
+        raise ValidationError(
+            'شناسه خودرو فقط می‌تواند شامل حروف انگلیسی، عدد و . _ - باشد (حداکثر ۵۰ کاراکتر). مثال: veh_8a3f2b1c',
+            code='invalid_vehicle_id',
+        )
+
+
+def validate_vehicle_year(value):
+    max_gregorian = timezone.now().year + 1
+    if not (1330 <= value <= 1420 or 1950 <= value <= max_gregorian):
+        raise ValidationError(
+            f'سال ساخت نامعتبر است (سال شمسی ۱۳۳۰ تا ۱۴۲۰ یا سال میلادی ۱۹۵۰ تا {max_gregorian}).',
+            code='invalid_vehicle_year',
+        )
