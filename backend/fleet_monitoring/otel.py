@@ -70,7 +70,6 @@ def setup_tracing(service_name):
     _safe_instrument('psycopg2', _instrument_psycopg2)
     _safe_instrument('redis', _instrument_redis)
     _safe_instrument('celery', _instrument_celery)
-    _safe_instrument('pika/amqp (RabbitMQ)', _instrument_pika)
 
     logger.info('OpenTelemetry tracing initialized for service=%s', service_name)
 
@@ -100,11 +99,6 @@ def _instrument_redis():
 def _instrument_celery():
     from opentelemetry.instrumentation.celery import CeleryInstrumentor
     CeleryInstrumentor().instrument()
-
-
-def _instrument_pika():
-    from opentelemetry.instrumentation.pika import PikaInstrumentor
-    PikaInstrumentor().instrument()
 
 
 def get_tracer():
