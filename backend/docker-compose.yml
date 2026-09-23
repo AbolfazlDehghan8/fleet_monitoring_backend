@@ -1,17 +1,33 @@
+x-app: &app
+  image: fleet_backend:latest
+  build: .
+  env_file: [.env]
+  restart: unless-stopped
+  environment: &app-env
+    DB_HOST: pgbouncer
+    DB_PORT: "6432"
+    REDIS_URL: redis://redis:6379/1
+    CELERY_RESULT_BACKEND_URL: redis://redis:6379/2
+    RABBITMQ_URL: amqp://${RABBITMQ_USER:?set RABBITMQ_USER in .env}:${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env}@rabbitmq:5672/${RABBITMQ_VHOST:-fleet_vhost}
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+  depends_on: &app-deps
+    pgbouncer: {condition: service_healthy}
+    redis: {condition: service_healthy}
+    rabbitmq: {condition: service_healthy}
+
 services:
   postgres:
     image: postgres:16
     container_name: fleet_postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: fleet_db
-      POSTGRES_USER: fleet_user
-      POSTGRES_PASSWORD: fleet_password
-    ports:
-      - "5432:5432"
+      POSTGRES_DB: ${DB_NAME:-fleet_db}
+      POSTGRES_USER: ${DB_USER:-fleet_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fleet_user -d fleet_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-fleet_user} -d ${DB_NAME:-fleet_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -19,8 +35,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: fleet_redis
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    command: redis-server --maxmemory ${REDIS_MAXMEMORY:-512mb} --maxmemory-policy allkeys-lru
     volumes:
       - redis_data:/data
     healthcheck:
@@ -32,13 +48,11 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management-alpine
     container_name: fleet_rabbitmq
+    restart: unless-stopped
     environment:
-      RABBITMQ_DEFAULT_USER: fleet_user
-      RABBITMQ_DEFAULT_PASS: fleet_password
-      RABBITMQ_DEFAULT_VHOST: fleet_vhost
-    ports:
-      - "5672:5672"
-      - "15672:15672"
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?set RABBITMQ_USER in .env}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?set RABBITMQ_PASSWORD in .env}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-fleet_vhost}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -50,12 +64,9 @@ services:
   jaeger:
     image: jaegertracing/all-in-one:1.60
     container_name: fleet_jaeger
+    restart: unless-stopped
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
-    ports:
-      - "16686:16686"
-      - "4318:4318"
-      - "4317:4317"
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:16686 || exit 1"]
       interval: 15s
@@ -65,146 +76,115 @@ services:
   pgbouncer:
     image: edoburu/pgbouncer:1.21.0-p0
     container_name: fleet_pgbouncer
+    restart: unless-stopped
     environment:
       DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: fleet_user
-      DB_PASSWORD: fleet_password
-      DB_NAME: fleet_db
+      DB_PORT: "5432"
+      DB_USER: ${DB_USER:-fleet_user}
+      DB_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      DB_NAME: ${DB_NAME:-fleet_db}
       POOL_MODE: transaction
-      MAX_CLIENT_CONN: 500
-      DEFAULT_POOL_SIZE: 50
-      ADMIN_USERS: fleet_user
-      LISTEN_PORT: 6432
+      MAX_CLIENT_CONN: "500"
+      DEFAULT_POOL_SIZE: "50"
+      ADMIN_USERS: ${DB_USER:-fleet_user}
+      LISTEN_PORT: "6432"
       AUTH_TYPE: scram-sha-256
-    ports:
-      - "6432:6432"
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres: {condition: service_healthy}
     healthcheck:
-      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432", "-U", "fleet_user"]
+      test: ["CMD", "pg_isready", "-h", "localhost", "-p", "6432", "-U", "${DB_USER:-fleet_user}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  migrate:
+    <<: *app
+    container_name: fleet_migrate
+    restart: "no"
+    command: python manage.py migrate --noinput
+    depends_on: *app-deps
+
   web:
-    build: .
+    <<: *app
     container_name: fleet_web
-    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
-    volumes:
-      - .:/app
     ports:
       - "8000:8000"
-    env_file:
-      - .env
     environment:
-      DB_HOST: pgbouncer
-      DB_PORT: 6432
-      REDIS_URL: redis://redis:6379/1
-      RABBITMQ_URL: amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
+      <<: *app-env
       OTEL_SERVICE_NAME: fleet-monitoring-api
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
-      pgbouncer:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      jaeger:
-        condition: service_healthy
+      <<: *app-deps
+      migrate: {condition: service_completed_successfully}
+      jaeger: {condition: service_healthy}
+
+  celery_worker_telemetry:
+    <<: *app
+    container_name: fleet_celery_worker_telemetry
+    command: >
+      celery -A fleet_monitoring worker --loglevel=info -n telemetry@%h
+      --concurrency=${CELERY_TELEMETRY_CONCURRENCY:-8}
+      --prefetch-multiplier=${CELERY_TELEMETRY_PREFETCH:-20}
+      -Q telemetry.raw.process
+    environment:
+      <<: *app-env
+      OTEL_SERVICE_NAME: fleet-monitoring-worker-telemetry
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-      start_period: 20s
+      test: ["CMD-SHELL", "celery -A fleet_monitoring inspect ping -d telemetry@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      <<: *app-deps
+      migrate: {condition: service_completed_successfully}
+      jaeger: {condition: service_healthy}
 
   celery_worker:
-    build: .
+    <<: *app
     container_name: fleet_celery_worker
-    command: celery -A fleet_monitoring worker --loglevel=info -Q telemetry.raw.process,alerts.trigger.notify,reports.generate,tasks.dead_letter
-    volumes:
-      - .:/app
-    env_file:
-      - .env
+    command: >
+      celery -A fleet_monitoring worker --loglevel=info -n default@%h
+      --concurrency=${CELERY_CONCURRENCY:-4} --prefetch-multiplier=1
+      -Q alerts.trigger.notify,reports.generate
     environment:
-      DB_HOST: pgbouncer
-      DB_PORT: 6432
-      REDIS_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND_URL: redis://redis:6379/2
-      RABBITMQ_URL: amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
+      <<: *app-env
       OTEL_SERVICE_NAME: fleet-monitoring-worker
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A fleet_monitoring inspect ping -d default@$$HOSTNAME || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
     depends_on:
-      pgbouncer:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      jaeger:
-        condition: service_healthy
+      <<: *app-deps
+      migrate: {condition: service_completed_successfully}
+      jaeger: {condition: service_healthy}
 
   celery_beat:
-    build: .
+    <<: *app
     container_name: fleet_celery_beat
-    command: celery -A fleet_monitoring beat --loglevel=info
-    volumes:
-      - .:/app
-    env_file:
-      - .env
+    command: celery -A fleet_monitoring beat --loglevel=info --schedule=/tmp/celerybeat-schedule
     environment:
-      DB_HOST: pgbouncer
-      DB_PORT: 6432
-      REDIS_URL: redis://redis:6379/1
-      CELERY_RESULT_BACKEND_URL: redis://redis:6379/2
-      RABBITMQ_URL: amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
+      <<: *app-env
       OTEL_SERVICE_NAME: fleet-monitoring-beat
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4318
     depends_on:
-      pgbouncer:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
-      jaeger:
-        condition: service_healthy
+      <<: *app-deps
+      migrate: {condition: service_completed_successfully}
+      jaeger: {condition: service_healthy}
 
   celery_exporter:
-    build: .
+    <<: *app
     container_name: fleet_celery_exporter
-    command: celery-prometheus-exporter --broker=amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
-    ports:
-      - "9808:9808"
-    env_file:
-      - .env
+    command: sh -c 'celery-prometheus-exporter --broker="$$RABBITMQ_URL"'
     depends_on:
-      rabbitmq:
-        condition: service_healthy
+      rabbitmq: {condition: service_healthy}
 
   flower:
-    build: .
+    <<: *app
     container_name: fleet_flower
-    command: celery -A fleet_monitoring flower --port=5555
-    ports:
-      - "5555:5555"
-    env_file:
-      - .env
-    environment:
-      DB_HOST: pgbouncer
-      DB_PORT: 6432
-      REDIS_URL: redis://redis:6379/1
-      RABBITMQ_URL: amqp://fleet_user:fleet_password@rabbitmq:5672/fleet_vhost
-    depends_on:
-      pgbouncer:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+    command: >
+      celery -A fleet_monitoring flower --port=5555
+      --basic-auth=${FLOWER_USER:?set FLOWER_USER in .env}:${FLOWER_PASSWORD:?set FLOWER_PASSWORD in .env}
 
 volumes:
   postgres_data:
