@@ -23,17 +23,23 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 1000 appuser
 
-WORKDIR /app
-
-COPY --from=builder /root/.local /home/appuser/.local
-COPY . .
-RUN chown -R appuser:appuser /app
-
-USER appuser
 ENV PATH=/home/appuser/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+RUN mkdir /app && chown appuser:appuser /app
+WORKDIR /app
+
+COPY --from=builder --chown=appuser:appuser /root/.local /home/appuser/.local
+COPY --chown=appuser:appuser . .
+
+USER appuser
+
+RUN DEBUG=True python manage.py collectstatic --noinput
+
 EXPOSE 8000
 
-CMD ["gunicorn", "fleet_monitoring.wsgi:application", "--bind", "0.0.0.0:8000"]
+HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/')" || exit 1
+
+CMD ["gunicorn", "fleet_monitoring.wsgi:application", "-c", "gunicorn.conf.py"]
