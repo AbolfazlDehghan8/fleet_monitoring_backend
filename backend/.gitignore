@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 venv/
+.venv/
 db.sqlite3
 .env
 .idea/
@@ -8,3 +9,6 @@ db.sqlite3
 .pytest_cache/
 htmlcov/
 .coverage
+celerybeat-schedule*
+staticfiles/
+*.log
