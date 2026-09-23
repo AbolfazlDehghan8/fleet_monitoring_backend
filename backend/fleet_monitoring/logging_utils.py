@@ -1,12 +1,13 @@
 import json
 import logging
+from datetime import datetime, timezone
 
 from .middleware import get_correlation_id
 
 _EXTRA_FIELDS = ('actor', 'action', 'target', 'status', 'duration_ms')
 _STANDARD_LOGRECORD_ATTRS = frozenset(logging.LogRecord(
     '', 0, '', 0, '', (), None,
-).__dict__.keys()) | {'correlation_id', 'message'}
+).__dict__.keys()) | {'correlation_id', 'message', 'asctime'}
 
 
 def _current_trace_context():
@@ -37,7 +38,7 @@ class JsonFormatter(logging.Formatter):
 
     def format(self, record):
         payload = {
-            'timestamp': self.formatTime(record, self.datefmt),
+            'timestamp': datetime.fromtimestamp(record.created, tz=timezone.utc).isoformat(timespec='milliseconds'),
             'level': record.levelname,
             'logger': record.name,
             'message': record.getMessage(),
@@ -51,4 +52,4 @@ class JsonFormatter(logging.Formatter):
                 payload[key] = value
         if record.exc_info:
             payload['exception'] = self.formatException(record.exc_info)
-        return json.dumps(payload, default=str)
+        return json.dumps(payload, default=str, ensure_ascii=False)
