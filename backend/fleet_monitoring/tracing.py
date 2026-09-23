@@ -1,4 +1,5 @@
 import logging
+import os
 import time
 from contextlib import contextmanager
 
@@ -6,21 +7,26 @@ from .middleware import get_correlation_id
 
 tracer_logger = logging.getLogger('audit')
 
+_SPAN_LOG_LEVEL = logging.INFO if os.getenv('TRACE_SPAN_LOGGING', 'False').lower() in ('1', 'true', 'yes') else logging.DEBUG
+
+_RESERVED = frozenset(logging.LogRecord('', 0, '', 0, '', (), None).__dict__) | {'message', 'asctime'}
+
+try:
+    from opentelemetry import trace as _otel_trace
+except Exception:
+    _otel_trace = None
+
+
+def _safe_extra(fields):
+    return {(f'ctx_{k}' if k in _RESERVED else k): v for k, v in fields.items()}
+
 
 @contextmanager
 def _current_or_noop_span(stage):
-    tracer = None
-    try:
-        from opentelemetry import trace
-        tracer = trace.get_tracer('fleet_monitoring')
-    except Exception:
-        tracer = None
-
-    if tracer is None:
+    if _otel_trace is None:
         yield None
         return
-
-    with tracer.start_as_current_span(stage) as span:
+    with _otel_trace.get_tracer('fleet_monitoring').start_as_current_span(stage) as span:
         yield span
 
 
@@ -28,16 +34,13 @@ def _current_or_noop_span(stage):
 def trace_span(stage, **extra_fields):
     start = time.monotonic()
     correlation_id = get_correlation_id()
+    safe_fields = _safe_extra(extra_fields)
 
-    tracer_logger.info(
-        'span_start',
-        extra={
-            'actor': 'tracer',
-            'action': stage,
-            'target': correlation_id,
-            **extra_fields,
-        },
-    )
+    if tracer_logger.isEnabledFor(_SPAN_LOG_LEVEL):
+        tracer_logger.log(
+            _SPAN_LOG_LEVEL, 'span_start',
+            extra={'actor': 'tracer', 'action': stage, 'target': correlation_id, **safe_fields},
+        )
 
     status = 'ok'
     with _current_or_noop_span(stage) as span:
@@ -62,14 +65,12 @@ def trace_span(stage, **extra_fields):
             raise
         finally:
             duration_ms = round((time.monotonic() - start) * 1000, 2)
-            tracer_logger.info(
-                'span_end',
-                extra={
-                    'actor': 'tracer',
-                    'action': stage,
-                    'target': correlation_id,
-                    'status': status,
-                    'duration_ms': duration_ms,
-                    **extra_fields,
-                },
-            )
+            level = logging.WARNING if status == 'error' else _SPAN_LOG_LEVEL
+            if tracer_logger.isEnabledFor(level):
+                tracer_logger.log(
+                    level, 'span_end',
+                    extra={
+                        'actor': 'tracer', 'action': stage, 'target': correlation_id,
+                        'status': status, 'duration_ms': duration_ms, **safe_fields,
+                    },
+                )
