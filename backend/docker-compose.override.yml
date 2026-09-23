@@ -1,0 +1,24 @@
+services:
+  postgres:
+    ports: ["127.0.0.1:5432:5432"]
+  redis:
+    ports: ["127.0.0.1:6379:6379"]
+  rabbitmq:
+    ports: ["127.0.0.1:5672:5672", "127.0.0.1:15672:15672"]
+  jaeger:
+    ports: ["127.0.0.1:16686:16686", "127.0.0.1:4318:4318"]
+  pgbouncer:
+    ports: ["127.0.0.1:6432:6432"]
+  web:
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes: [".:/app"]
+  celery_worker_telemetry:
+    volumes: [".:/app"]
+  celery_worker:
+    volumes: [".:/app"]
+  celery_beat:
+    volumes: [".:/app"]
+  celery_exporter:
+    ports: ["127.0.0.1:9808:9808"]
+  flower:
+    ports: ["127.0.0.1:5555:5555"]
