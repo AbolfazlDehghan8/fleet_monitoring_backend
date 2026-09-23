@@ -3,8 +3,9 @@ attrs==26.1.0
 bcrypt==5.0.0
 celery==5.4.0
 gunicorn==22.0.0
+whitenoise==6.9.0
 kombu==5.6.2
-Django==5.0
+Django>=5.0
 django-cors-headers==4.6.0
 django-redis==5.4.0
 djangorestframework==3.15.2
@@ -12,7 +13,6 @@ drf-spectacular==0.28.0
 inflection==0.5.1
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1
-pika==1.4.1
 psycopg2-binary==2.9.12
 PyJWT==2.10.1
 python-dotenv==1.0.1
@@ -36,4 +36,3 @@ opentelemetry-instrumentation-django==0.65b0
 opentelemetry-instrumentation-psycopg2==0.65b0
 opentelemetry-instrumentation-redis==0.65b0
 opentelemetry-instrumentation-celery==0.65b0
-opentelemetry-instrumentation-pika==0.65b0
