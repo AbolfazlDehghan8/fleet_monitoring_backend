@@ -8,3 +8,8 @@ venv
 db.sqlite3
 .env
 *.log
+.pytest_cache
+htmlcov
+.coverage
+celerybeat-schedule*
+staticfiles
