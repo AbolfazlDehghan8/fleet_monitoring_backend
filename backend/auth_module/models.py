@@ -1,6 +1,8 @@
 import uuid
+
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models.functions import Lower
 
 
 class User(AbstractUser):
@@ -21,8 +23,21 @@ class User(AbstractUser):
 
     REQUIRED_FIELDS = ['email', 'role']
 
+    class Meta(AbstractUser.Meta):
+        constraints = [
+            models.UniqueConstraint(Lower('username'), name='auth_user_username_ci_unique'),
+            models.UniqueConstraint(Lower('email'), name='auth_user_email_ci_unique'),
+        ]
+
     def __str__(self):
         return f"{self.username} ({self.get_role_display()})"
+
+    def save(self, *args, **kwargs):
+        if self.email:
+            self.email = self.email.strip().lower()
+        if self.is_superuser and self.role != self.Role.ADMIN:
+            self.role = self.Role.ADMIN
+        super().save(*args, **kwargs)
 
     @property
     def is_admin(self):
