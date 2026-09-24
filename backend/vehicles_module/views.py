@@ -1,38 +1,33 @@
-from django.core.exceptions import PermissionDenied, ValidationError
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from auth_module.permissions import IsAdmin, IsAdminOrFleetManager, IsDriver
+from fleet_monitoring.pagination import list_response
+
 from .serializers import (
     CompanySerializer,
     CompanyUpdateSerializer,
     DriverCreateSerializer,
+    DriverFilterSerializer,
     DriverSerializer,
     DriverUpdateSerializer,
     LinkableUserSerializer,
     VehicleAdminUpdateSerializer,
     VehicleCreateSerializer,
+    VehicleFilterSerializer,
     VehicleManagerUpdateSerializer,
     VehicleSerializer,
 )
 from .services import CompanyService, DriverService, VehicleService
 
-
-def _error_response(exc):
-
-    if isinstance(exc, PermissionDenied):
-        return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
-
-    detail = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
-    detail_value = detail.get('detail')
-    if isinstance(detail_value, list) and len(detail_value) == 1:
-        detail_value = detail_value[0]
-    is_not_found = detail_value in ('Vehicle not found', 'Driver not found', 'Company not found')
-    status_code = status.HTTP_404_NOT_FOUND if is_not_found else status.HTTP_400_BAD_REQUEST
-    return Response(detail, status=status_code)
+PAGINATION_PARAMS = [
+    OpenApiParameter('page', int, description='Opt in to pagination ({count,next,previous,results}). '
+                                              'Without page/page_size a plain array is returned.'),
+    OpenApiParameter('page_size', int, description='Items per page (default 50, max 200).'),
+]
 
 
 class VehicleListCreateView(APIView):
@@ -40,13 +35,22 @@ class VehicleListCreateView(APIView):
     permission_classes = [IsAuthenticated, IsAdminOrFleetManager]
 
     @extend_schema(
+        parameters=[
+            OpenApiParameter('status', str, description='Filter by status'),
+            OpenApiParameter('search', str, description='Search vehicle_id, plate, VIN, make, model'),
+            OpenApiParameter('driver', int, description='Filter by driver id'),
+            OpenApiParameter('assigned_manager', int, description='Filter by manager id (admin only)'),
+            *PAGINATION_PARAMS,
+        ],
         responses={200: VehicleSerializer(many=True)},
         summary='List vehicles',
         description='Admin sees all vehicles; Fleet Manager sees only vehicles assigned to them.',
     )
     def get(self, request):
-        vehicles = VehicleService.list_vehicles(request.user)
-        return Response(VehicleSerializer(vehicles, many=True).data, status=status.HTTP_200_OK)
+        filters = VehicleFilterSerializer(data=request.query_params)
+        filters.is_valid(raise_exception=True)
+        vehicles = VehicleService.list_vehicles(request.user, filters.validated_data)
+        return list_response(request, vehicles, VehicleSerializer)
 
     @extend_schema(
         request=VehicleCreateSerializer,
@@ -58,12 +62,7 @@ class VehicleListCreateView(APIView):
     def post(self, request):
         serializer = VehicleCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        try:
-            vehicle = VehicleService.create_vehicle(request.user, serializer.validated_data)
-        except (ValidationError, PermissionDenied) as exc:
-            return _error_response(exc)
-
+        vehicle = VehicleService.create_vehicle(request.user, serializer.validated_data)
         return Response(VehicleSerializer(vehicle).data, status=status.HTTP_201_CREATED)
 
 
@@ -76,11 +75,7 @@ class VehicleDetailView(APIView):
         summary='Retrieve a vehicle by id',
     )
     def get(self, request, vehicle_id):
-        try:
-            vehicle = VehicleService.get_vehicle_for_user(request.user, vehicle_id)
-        except (ValidationError, PermissionDenied) as exc:
-            return _error_response(exc)
-
+        vehicle = VehicleService.get_vehicle_for_user(request.user, vehicle_id)
         return Response(VehicleSerializer(vehicle).data, status=status.HTTP_200_OK)
 
     @extend_schema(
@@ -96,24 +91,17 @@ class VehicleDetailView(APIView):
         )
         serializer = serializer_class(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-
-        try:
-            vehicle = VehicleService.update_vehicle(request.user, vehicle_id, serializer.validated_data)
-        except (ValidationError, PermissionDenied) as exc:
-            return _error_response(exc)
-
+        vehicle = VehicleService.update_vehicle(request.user, vehicle_id, serializer.validated_data)
         return Response(VehicleSerializer(vehicle).data, status=status.HTTP_200_OK)
 
     @extend_schema(
-        responses={204: None, 403: 'Forbidden', 404: 'Not Found'},
+        responses={204: None, 400: 'Vehicle has history', 403: 'Forbidden', 404: 'Not Found'},
         summary='Delete a vehicle (admin only)',
+        description='Refused (400) when the vehicle has telemetry or alerts: set its status to '
+                    '`decommissioned` instead so history is preserved.',
     )
     def delete(self, request, vehicle_id):
-        try:
-            VehicleService.delete_vehicle(request.user, vehicle_id)
-        except (ValidationError, PermissionDenied) as exc:
-            return _error_response(exc)
-
+        VehicleService.delete_vehicle(request.user, vehicle_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -126,11 +114,7 @@ class VehicleStatusView(APIView):
         summary='Get cached vehicle status',
     )
     def get(self, request, vehicle_id):
-        try:
-            payload = VehicleService.get_vehicle_status(request.user, vehicle_id)
-        except (ValidationError, PermissionDenied) as exc:
-            return _error_response(exc)
-
+        payload = VehicleService.get_vehicle_status(request.user, vehicle_id)
         return Response(payload, status=status.HTTP_200_OK)
 
 
@@ -144,11 +128,7 @@ class DashboardStatsView(APIView):
         description='Admin sees fleet-wide counters; Fleet Manager sees counters for their own vehicles only.',
     )
     def get(self, request):
-        try:
-            stats = VehicleService.get_dashboard_stats(request.user)
-        except PermissionDenied as exc:
-            return _error_response(exc)
-        return Response(stats, status=status.HTTP_200_OK)
+        return Response(VehicleService.get_dashboard_stats(request.user), status=status.HTTP_200_OK)
 
 
 class VehicleMeView(APIView):
@@ -169,16 +149,17 @@ class DriverListCreateView(APIView):
     permission_classes = [IsAuthenticated, IsAdminOrFleetManager]
 
     @extend_schema(
+        parameters=[OpenApiParameter('search', str, description='Search license, phone, username, name'),
+                    *PAGINATION_PARAMS],
         responses={200: DriverSerializer(many=True)},
         summary='List driver profiles',
         description='Admin sees all drivers; Fleet Manager sees only drivers assigned to their vehicles.',
     )
     def get(self, request):
-        try:
-            drivers = DriverService.list_drivers(request.user)
-        except PermissionDenied as exc:
-            return _error_response(exc)
-        return Response(DriverSerializer(drivers, many=True).data, status=status.HTTP_200_OK)
+        filters = DriverFilterSerializer(data=request.query_params)
+        filters.is_valid(raise_exception=True)
+        drivers = DriverService.list_drivers(request.user, filters.validated_data.get('search'))
+        return list_response(request, drivers, DriverSerializer)
 
     @extend_schema(
         request=DriverCreateSerializer,
@@ -189,12 +170,7 @@ class DriverListCreateView(APIView):
     def post(self, request):
         serializer = DriverCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        try:
-            driver = DriverService.create_driver(request.user, serializer.validated_data)
-        except (ValidationError, PermissionDenied) as exc:
-            return _error_response(exc)
-
+        driver = DriverService.create_driver(request.user, serializer.validated_data)
         return Response(DriverSerializer(driver).data, status=status.HTTP_201_CREATED)
 
 
@@ -212,10 +188,7 @@ class DriverLinkableUsersView(APIView):
         ),
     )
     def get(self, request):
-        try:
-            users = DriverService.list_linkable_users(request.user)
-        except PermissionDenied as exc:
-            return _error_response(exc)
+        users = DriverService.list_linkable_users(request.user)
         return Response(LinkableUserSerializer(users, many=True).data, status=status.HTTP_200_OK)
 
 
@@ -229,14 +202,12 @@ class DriverAssignableListView(APIView):
         description=(
             'Admin sees all drivers. Fleet Manager sees drivers already assigned to one of '
             'their vehicles PLUS drivers not yet linked to any vehicle, so a freshly created '
-            'driver profile can be selected in the vehicle-assignment dropdown.'
+            'driver profile can be selected in the vehicle-assignment dropdown. The same rule '
+            'is enforced when a vehicle is created/updated.'
         ),
     )
     def get(self, request):
-        try:
-            drivers = DriverService.list_assignable(request.user)
-        except PermissionDenied as exc:
-            return _error_response(exc)
+        drivers = DriverService.list_assignable(request.user)
         return Response(DriverSerializer(drivers, many=True).data, status=status.HTTP_200_OK)
 
 
@@ -246,10 +217,7 @@ class DriverDetailView(APIView):
 
     @extend_schema(responses={200: DriverSerializer, 404: 'Not Found'}, summary='Retrieve a driver')
     def get(self, request, driver_id):
-        try:
-            driver = DriverService.get_driver(request.user, driver_id)
-        except (ValidationError, PermissionDenied) as exc:
-            return _error_response(exc)
+        driver = DriverService.get_driver(request.user, driver_id)
         return Response(DriverSerializer(driver).data, status=status.HTTP_200_OK)
 
     @extend_schema(
@@ -260,21 +228,12 @@ class DriverDetailView(APIView):
     def patch(self, request, driver_id):
         serializer = DriverUpdateSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-
-        try:
-            driver = DriverService.update_driver(request.user, driver_id, serializer.validated_data)
-        except (ValidationError, PermissionDenied) as exc:
-            return _error_response(exc)
-
+        driver = DriverService.update_driver(request.user, driver_id, serializer.validated_data)
         return Response(DriverSerializer(driver).data, status=status.HTTP_200_OK)
 
     @extend_schema(responses={204: None, 403: 'Forbidden', 404: 'Not Found'}, summary='Delete a driver profile')
     def delete(self, request, driver_id):
-        try:
-            DriverService.delete_driver(request.user, driver_id)
-        except (ValidationError, PermissionDenied) as exc:
-            return _error_response(exc)
-
+        DriverService.delete_driver(request.user, driver_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -288,11 +247,7 @@ class CompanyView(APIView):
         description='Single-tenant deployment: returns the one Company record for this system.',
     )
     def get(self, request):
-        try:
-            company = CompanyService.get_company()
-        except ValidationError as exc:
-            return _error_response(exc)
-        return Response(CompanySerializer(company).data, status=status.HTTP_200_OK)
+        return Response(CompanySerializer(CompanyService.get_company()).data, status=status.HTTP_200_OK)
 
     @extend_schema(
         request=CompanyUpdateSerializer,
@@ -302,10 +257,5 @@ class CompanyView(APIView):
     def patch(self, request):
         serializer = CompanyUpdateSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-
-        try:
-            company = CompanyService.update_company(request.user, serializer.validated_data)
-        except (ValidationError, PermissionDenied) as exc:
-            return _error_response(exc)
-
+        company = CompanyService.update_company(request.user, serializer.validated_data)
         return Response(CompanySerializer(company).data, status=status.HTTP_200_OK)
