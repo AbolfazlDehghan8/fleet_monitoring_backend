@@ -1,4 +1,10 @@
+import math
+import operator as op
+
+from django.core.exceptions import ValidationError
 from django.db import models
+
+from fleet_monitoring.metrics import METRIC_RANGES
 
 RULE_METRIC_CHOICES = [
     ('speed', 'Speed (km/h)'),
@@ -23,6 +29,31 @@ RULE_SEVERITY_CHOICES = [
     ('critical', 'Critical'),
 ]
 
+_COMPARATORS = {
+    'gt': op.gt,
+    'gte': op.ge,
+    'lt': op.lt,
+    'lte': op.le,
+}
+
+
+def rule_matches(operator, value, threshold):
+    if operator == 'eq':
+        return math.isclose(value, threshold, rel_tol=1e-9, abs_tol=1e-9)
+    comparator = _COMPARATORS.get(operator)
+    return bool(comparator and comparator(value, threshold))
+
+
+def validate_threshold_for_metric(metric, threshold):
+    if threshold is None:
+        return None
+    if not math.isfinite(threshold):
+        return 'Threshold must be a finite number.'
+    limits = METRIC_RANGES.get(metric)
+    if limits and not limits[0] <= threshold <= limits[1]:
+        return f'Threshold for {metric} must be between {limits[0]} and {limits[1]}.'
+    return None
+
 
 class Rule(models.Model):
     name = models.CharField(max_length=100)
@@ -36,7 +67,7 @@ class Rule(models.Model):
     is_active = models.BooleanField(default=True)
 
     created_by = models.ForeignKey(
-        'auth_module.User', on_delete=models.SET_NULL, null=True, related_name='created_rules',
+        'auth_module.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='created_rules',
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -46,20 +77,20 @@ class Rule(models.Model):
         indexes = [
             models.Index(fields=['metric', 'is_active']),
         ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['metric', 'operator', 'threshold'], name='uniq_rule_metric_operator_threshold',
+            ),
+        ]
         ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.name} ({self.metric} {self.get_operator_display()} {self.threshold})"
 
+    def clean(self):
+        message = validate_threshold_for_metric(self.metric, self.threshold)
+        if message:
+            raise ValidationError({'threshold': message})
+
     def evaluate(self, value):
-        if self.operator == 'gt':
-            return value > self.threshold
-        if self.operator == 'gte':
-            return value >= self.threshold
-        if self.operator == 'lt':
-            return value < self.threshold
-        if self.operator == 'lte':
-            return value <= self.threshold
-        if self.operator == 'eq':
-            return value == self.threshold
-        return False
+        return rule_matches(self.operator, value, self.threshold)
