@@ -1,11 +1,14 @@
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import BaseThrottle, ScopedRateThrottle
 from rest_framework.views import APIView
+
+from fleet_monitoring.error_utils import validation_error_response
 
 from .models import User
 from .permissions import IsAdmin
@@ -18,10 +21,14 @@ from .serializers import (
     ProfileUpdateSerializer,
     RefreshTokenSerializer,
     RegisterSerializer,
+    UserProfileSerializer,
     UserSerializer,
 )
 from .services import AuthService, UserService
-from fleet_monitoring.error_utils import validation_error_response
+
+
+def _client_ip(request):
+    return BaseThrottle().get_ident(request)
 
 
 class RegisterView(APIView):
@@ -31,15 +38,19 @@ class RegisterView(APIView):
 
     @extend_schema(
         request=RegisterSerializer,
-        responses={201: UserSerializer, 400: 'Bad Request'},
+        responses={201: UserSerializer, 400: 'Bad Request', 403: 'Self-registration disabled'},
         summary='Register a new user',
         description=(
             'Create a new user account with username, email, and password. '
             'All self-registered accounts are created with the driver role; '
-            'elevated roles are assigned by an Admin (see /api/v1/admin/users/).'
+            'elevated roles are assigned by an Admin (see /api/v1/admin/users/). '
+            'Can be disabled with ALLOW_SELF_REGISTRATION=False.'
         ),
     )
     def post(self, request):
+        if not settings.ALLOW_SELF_REGISTRATION:
+            return Response({'detail': 'Self-registration is disabled'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
@@ -58,30 +69,38 @@ class LoginView(APIView):
 
     @extend_schema(
         request=LoginSerializer,
-        responses={200: 'Success', 401: 'Unauthorized'},
+        responses={200: 'Success', 401: 'Unauthorized', 429: 'Too many failed attempts'},
         summary='Login and get JWT tokens',
-        description='Authenticate user and return access and refresh tokens',
+        description=(
+            'Authenticate user and return access and refresh tokens. After repeated failed '
+            'attempts for the same username and IP the endpoint answers 429 for a cool-off period.'
+        ),
     )
     def post(self, request):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
         try:
-            result = AuthService.login_user(**serializer.validated_data)
+            result = AuthService.login_user(**serializer.validated_data, ip_address=_client_ip(request))
         except AuthenticationFailed as exc:
-            return Response({'error': str(exc)}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'error': str(exc.detail)}, status=status.HTTP_401_UNAUTHORIZED)
 
         return Response(result, status=status.HTTP_200_OK)
 
 
 class RefreshTokenView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = 'refresh'
 
     @extend_schema(
         request=RefreshTokenSerializer,
         responses={200: 'Success', 401: 'Unauthorized'},
         summary='Refresh access token',
-        description='Get a new access token using a valid refresh token',
+        description=(
+            'Exchange a valid refresh token for a new access token and a new refresh token '
+            '(rotation). Re-using an already-rotated token revokes all of the user\'s sessions.'
+        ),
     )
     def post(self, request):
         serializer = RefreshTokenSerializer(data=request.data)
@@ -90,7 +109,7 @@ class RefreshTokenView(APIView):
         try:
             result = AuthService.refresh_access_token(serializer.validated_data['refresh_token'])
         except AuthenticationFailed as exc:
-            return Response({'error': str(exc)}, status=status.HTTP_401_UNAUTHORIZED)
+            return Response({'error': str(exc.detail)}, status=status.HTTP_401_UNAUTHORIZED)
 
         return Response(result, status=status.HTTP_200_OK)
 
@@ -120,12 +139,12 @@ class ProfileView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        responses={200: UserSerializer, 401: 'Unauthorized'},
+        responses={200: UserProfileSerializer, 401: 'Unauthorized'},
         summary='Get current user profile',
         description="Get the authenticated user's profile information",
     )
     def get(self, request):
-        return Response(UserService.get_user_profile(request.user), status=status.HTTP_200_OK)
+        return Response(UserProfileSerializer(request.user).data, status=status.HTTP_200_OK)
 
     @extend_schema(
         request=ProfileUpdateSerializer,
@@ -150,9 +169,13 @@ class ChangePasswordView(APIView):
 
     @extend_schema(
         request=ChangePasswordSerializer,
-        responses={200: 'Success', 400: 'Bad Request', 401: 'Unauthorized'},
+        responses={200: 'Success', 400: 'Bad Request (incl. wrong current password)', 401: 'Unauthorized'},
         summary='Change current user password',
-        description="Change the authenticated user's password",
+        description=(
+            "Change the authenticated user's password. All refresh tokens are revoked, so "
+            'other devices must log in again. A wrong current password answers 400 (not 401) '
+            'so clients do not mistake it for an expired session.'
+        ),
     )
     def post(self, request):
         serializer = ChangePasswordSerializer(data=request.data)
@@ -161,8 +184,8 @@ class ChangePasswordView(APIView):
 
         try:
             UserService.change_password(request.user, data['old_password'], data['new_password'])
-        except AuthenticationFailed as exc:
-            return Response({'error': str(exc)}, status=status.HTTP_401_UNAUTHORIZED)
+        except ValidationError as exc:
+            return validation_error_response(exc)
 
         return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
 
@@ -172,12 +195,14 @@ class AdminUserListView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     @extend_schema(
-        responses={200: UserSerializer(many=True), 403: 'Forbidden'},
+        responses={200: UserSerializer(many=True), 400: 'Invalid role filter', 403: 'Forbidden'},
         summary='List all users (admin only)',
         description='List all users in the system, optionally filtered by role',
     )
     def get(self, request):
         role = request.query_params.get('role')
+        if role and role not in User.Role.values:
+            return Response({'role': [f'"{role}" is not a valid choice.']}, status=status.HTTP_400_BAD_REQUEST)
         users = UserService.list_users(role=role)
         return Response(UserSerializer(users, many=True).data, status=status.HTTP_200_OK)
 
@@ -221,7 +246,10 @@ class AdminUserDetailView(APIView):
         request=AdminUserUpdateSerializer,
         responses={200: UserSerializer, 400: 'Bad Request', 403: 'Forbidden', 404: 'Not Found'},
         summary='Update a user (admin only)',
-        description='Admin can update role, active status, name, and email of any user',
+        description=(
+            'Admin can update role, active status, name, and email of any user. An admin cannot '
+            'demote/deactivate themselves, and the last active admin cannot be removed.'
+        ),
     )
     def patch(self, request, user_id):
         serializer = AdminUserUpdateSerializer(data=request.data, partial=True)
@@ -230,20 +258,15 @@ class AdminUserDetailView(APIView):
         try:
             user = UserService.admin_update_user(request.user, user_id, serializer.validated_data)
         except ValidationError as exc:
-            detail = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
-            status_code = status.HTTP_404_NOT_FOUND if detail.get('detail') == 'User not found' else status.HTTP_400_BAD_REQUEST
-            return Response(detail, status=status_code)
+            return validation_error_response(exc)
 
         return Response(UserSerializer(user).data, status=status.HTTP_200_OK)
 
     @extend_schema(
-        responses={204: None, 403: 'Forbidden', 404: 'Not Found'},
+        responses={204: None, 400: 'Cannot delete self / last admin', 403: 'Forbidden', 404: 'Not Found'},
         summary='Delete a user (admin only)',
+        description='Prefer deactivating (is_active=false) to keep history; deletion is permanent.',
     )
     def delete(self, request, user_id):
-        try:
-            UserService.delete_user(request.user, user_id)
-        except ValidationError:
-            return Response({'detail': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-
+        UserService.delete_user(request.user, user_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
