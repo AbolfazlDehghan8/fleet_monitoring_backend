@@ -1,11 +1,14 @@
 import logging
+import random
 
 from django.core.cache import cache
-from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
 from django.utils import timezone as django_timezone
+from rest_framework.exceptions import NotFound, PermissionDenied
 
 from auth_module.models import User
+from fleet_monitoring.error_utils import integrity_error_to_validation
 
 from .models import OBU, Company, Driver, Vehicle
 
@@ -17,12 +20,28 @@ VEHICLE_STATUS_CACHE_TTL_SECONDS = 60
 
 VEHICLE_TELEMETRY_CACHE_KEY = 'fleet:vehicle:{id}:telemetry'
 
+VEHICLE_LOOKUP_CACHE_KEY = 'fleet:vehicle:lookup:{public_id}'
+VEHICLE_LOOKUP_CACHE_TTL_SECONDS = 60
+VEHICLE_LOOKUP_MISSING_TTL_SECONDS = 10
+
 DASHBOARD_STATS_CACHE_KEY = 'fleet:dashboard:stats'
 DASHBOARD_STATS_CACHE_TTL_SECONDS = 30
 
+VEHICLE_RELATED = ('driver__user', 'assigned_manager', 'obu')
+UNIQUE_FIELDS = ('license_plate', 'vin', 'vehicle_id', 'serial_number', 'license_number', 'phone_number', 'user')
+UNIQUE_ALIASES = {'user_id': 'user', 'vehicle_id': 'vehicle_id'}
+UNIQUE_MESSAGES = {'user': 'This user already has a driver profile'}
 
-def _not_found(detail='Vehicle not found'):
-    raise ValidationError({'detail': detail})
+
+def _integrity_error(exc):
+    return integrity_error_to_validation(
+        exc, UNIQUE_FIELDS, messages=UNIQUE_MESSAGES, aliases=UNIQUE_ALIASES,
+    )
+
+
+def _jittered(ttl):
+    spread = max(1, ttl // 10)
+    return ttl + random.randint(-spread, spread)
 
 
 def _safe_cache_get(key, action):
@@ -39,7 +58,7 @@ def _safe_cache_get(key, action):
 
 def _safe_cache_set(key, value, timeout, action):
     try:
-        cache.set(key, value, timeout=timeout)
+        cache.set(key, value, timeout=_jittered(timeout))
     except Exception:
         degradation_logger.warning(
             'cache_write_failed',
@@ -62,39 +81,88 @@ def _safe_cache_delete(key, action):
 class VehicleService:
 
     @staticmethod
-    def list_vehicles(user):
-        queryset = Vehicle.objects.select_related('driver__user', 'assigned_manager', 'obu')
-        if user.is_admin:
-            return queryset
+    def list_vehicles(user, filters=None):
+        queryset = Vehicle.objects.select_related(*VEHICLE_RELATED)
         if user.is_fleet_manager:
-            return queryset.filter(assigned_manager=user)
-        raise PermissionDenied('Drivers must use /api/v1/vehicles/me/')
+            queryset = queryset.filter(assigned_manager=user)
+        elif not user.is_admin:
+            raise PermissionDenied('Drivers must use /api/v1/vehicles/me/')
+
+        filters = filters or {}
+        if filters.get('status'):
+            queryset = queryset.filter(status=filters['status'])
+        if filters.get('driver'):
+            queryset = queryset.filter(driver_id=filters['driver'])
+        if filters.get('assigned_manager') and user.is_admin:
+            queryset = queryset.filter(assigned_manager_id=filters['assigned_manager'])
+        search = filters.get('search')
+        if search:
+            queryset = queryset.filter(
+                models.Q(vehicle_id__icontains=search) | models.Q(license_plate__icontains=search)
+                | models.Q(vin__icontains=search) | models.Q(make__icontains=search)
+                | models.Q(model__icontains=search)
+            )
+        return queryset.order_by('-created_at', '-id')
 
     @staticmethod
     def get_vehicle_for_user(user, vehicle_id):
         try:
-            vehicle = Vehicle.objects.select_related('driver__user', 'assigned_manager', 'obu').get(id=vehicle_id)
+            vehicle = Vehicle.objects.select_related(*VEHICLE_RELATED).get(id=vehicle_id)
         except Vehicle.DoesNotExist:
-            _not_found()
-            return
+            raise NotFound('Vehicle not found')
 
         if user.is_admin:
             return vehicle
         if user.is_fleet_manager and vehicle.assigned_manager_id == user.id:
             return vehicle
-        if user.is_driver and vehicle.driver_id and vehicle.driver.user_id == user.id:
+        if (
+            user.is_driver and vehicle.driver_id
+            and vehicle.driver.user_id == user.id and vehicle.driver.is_active
+        ):
             return vehicle
 
         raise PermissionDenied('You do not have access to this vehicle')
 
     @staticmethod
     def get_vehicles_for_driver(user):
-        try:
-            driver = Driver.objects.get(user=user)
-        except Driver.DoesNotExist:
-            return Vehicle.objects.none()
-        return Vehicle.objects.filter(driver=driver).select_related('assigned_manager', 'obu')
+        return (
+            Vehicle.objects.filter(driver__user=user, driver__is_active=True)
+            .select_related(*VEHICLE_RELATED)
+            .order_by('-created_at', '-id')
+        )
 
+    @staticmethod
+    def get_ingest_target(public_id):
+        key = VEHICLE_LOOKUP_CACHE_KEY.format(public_id=public_id)
+        cached = _safe_cache_get(key, 'get_ingest_target')
+        if cached is not None:
+            return None if cached.get('missing') else cached
+
+        vehicle = Vehicle.objects.select_related('driver', 'obu').filter(vehicle_id=public_id).first()
+        if vehicle is None:
+            _safe_cache_set(key, {'missing': True}, VEHICLE_LOOKUP_MISSING_TTL_SECONDS, 'get_ingest_target')
+            return None
+
+        obu = getattr(vehicle, 'obu', None)
+        snapshot = {
+            'pk': vehicle.id,
+            'public_id': vehicle.vehicle_id,
+            'status': vehicle.status,
+            'assigned_manager_id': vehicle.assigned_manager_id,
+            'driver_id': vehicle.driver_id,
+            'driver_user_id': vehicle.driver.user_id if vehicle.driver_id else None,
+            'driver_active': bool(vehicle.driver_id and vehicle.driver.is_active),
+            'obu_serial': obu.serial_number if obu else None,
+        }
+        _safe_cache_set(key, snapshot, VEHICLE_LOOKUP_CACHE_TTL_SECONDS, 'get_ingest_target')
+        return snapshot
+
+    @staticmethod
+    def _assert_driver_assignable(actor, driver):
+        if driver is None or not actor.is_fleet_manager:
+            return
+        if not DriverService.list_assignable(actor).filter(pk=driver.pk).exists():
+            raise PermissionDenied('You do not have access to this driver')
 
     @staticmethod
     def create_vehicle(actor, data):
@@ -104,6 +172,7 @@ class VehicleService:
 
         if actor.is_fleet_manager:
             data['assigned_manager'] = actor
+        VehicleService._assert_driver_assignable(actor, data.get('driver'))
 
         data['company'] = CompanyService.get_company()
 
@@ -118,8 +187,9 @@ class VehicleService:
                     obu.full_clean()
                     obu.save()
         except IntegrityError as exc:
-            raise _integrity_error_to_validation(exc)
+            raise _integrity_error(exc)
 
+        VehicleService._invalidate_caches(vehicle.id, [vehicle.assigned_manager_id], vehicle.vehicle_id)
         audit_logger.info(
             'vehicle_created', extra={'actor': actor.id, 'action': 'create_vehicle', 'target': vehicle.id}
         )
@@ -128,6 +198,7 @@ class VehicleService:
     @staticmethod
     def update_vehicle(actor, vehicle_id, data):
         vehicle = VehicleService.get_vehicle_for_user(actor, vehicle_id)
+        previous_manager_id = vehicle.assigned_manager_id
 
         data = dict(data)
         obu_serial = data.pop('obu_serial_number', None)
@@ -135,13 +206,15 @@ class VehicleService:
 
         if actor.is_fleet_manager:
             data.pop('assigned_manager', None)
+        if 'driver' in data and data['driver'] != vehicle.driver:
+            VehicleService._assert_driver_assignable(actor, data['driver'])
 
         for field, value in data.items():
             setattr(vehicle, field, value)
 
         try:
             with transaction.atomic():
-                vehicle.full_clean()
+                vehicle.full_clean(exclude=['vehicle_id', 'company'])
                 vehicle.save()
 
                 obu = getattr(vehicle, 'obu', None)
@@ -155,9 +228,11 @@ class VehicleService:
                     obu.full_clean()
                     obu.save()
         except IntegrityError as exc:
-            raise _integrity_error_to_validation(exc)
+            raise _integrity_error(exc)
 
-        VehicleService._invalidate_status_cache(vehicle.id)
+        VehicleService._invalidate_caches(
+            vehicle.id, [previous_manager_id, vehicle.assigned_manager_id], vehicle.vehicle_id,
+        )
         audit_logger.info(
             'vehicle_updated', extra={'actor': actor.id, 'action': 'update_vehicle', 'target': vehicle.id}
         )
@@ -168,15 +243,24 @@ class VehicleService:
         if not actor.is_admin:
             raise PermissionDenied('Only admin can delete vehicles')
 
-        deleted, _ = Vehicle.objects.filter(id=vehicle_id).delete()
-        if not deleted:
-            _not_found()
+        try:
+            vehicle = Vehicle.objects.get(id=vehicle_id)
+        except Vehicle.DoesNotExist:
+            raise NotFound('Vehicle not found')
 
-        VehicleService._invalidate_status_cache(vehicle_id)
+        if vehicle.telemetry_logs.exists() or vehicle.alerts.exists():
+            raise ValidationError({
+                'detail': 'Vehicle has recorded telemetry or alerts and cannot be deleted; '
+                          'set its status to decommissioned instead',
+            })
+
+        manager_id, public_id = vehicle.assigned_manager_id, vehicle.vehicle_id
+        vehicle.delete()
+
+        VehicleService._invalidate_caches(vehicle_id, [manager_id], public_id)
         audit_logger.info(
             'vehicle_deleted', extra={'actor': actor.id, 'action': 'delete_vehicle', 'target': vehicle_id}
         )
-
 
     @staticmethod
     def get_vehicle_status(user, vehicle_id):
@@ -201,9 +285,13 @@ class VehicleService:
         return payload
 
     @staticmethod
-    def _invalidate_status_cache(vehicle_id):
+    def _invalidate_caches(vehicle_id, manager_ids=(), public_id=None):
         _safe_cache_delete(VEHICLE_STATUS_CACHE_KEY.format(id=vehicle_id), 'invalidate_status_cache')
-        _safe_cache_delete(DASHBOARD_STATS_CACHE_KEY, 'invalidate_status_cache')
+        if public_id:
+            _safe_cache_delete(VEHICLE_LOOKUP_CACHE_KEY.format(public_id=public_id), 'invalidate_lookup_cache')
+        _safe_cache_delete(DASHBOARD_STATS_CACHE_KEY, 'invalidate_dashboard_cache')
+        for manager_id in {m for m in manager_ids if m}:
+            _safe_cache_delete(f'{DASHBOARD_STATS_CACHE_KEY}:{manager_id}', 'invalidate_dashboard_cache')
 
     @staticmethod
     def get_dashboard_stats(user):
@@ -223,11 +311,11 @@ class VehicleService:
             alerts_qs = alerts_qs.filter(vehicle__assigned_manager=user)
 
         by_status = {choice.value: 0 for choice in Vehicle.Status}
-        for row in queryset.values('status').annotate(count=models.Count('id')):
+        for row in queryset.order_by().values('status').annotate(count=models.Count('id')):
             by_status[row['status']] = row['count']
 
         payload = {
-            'total_vehicles': queryset.count(),
+            'total_vehicles': sum(by_status.values()),
             'vehicles_by_status': by_status,
             'unacknowledged_alerts': alerts_qs.count(),
             'generated_at': django_timezone.now().isoformat(),
@@ -239,20 +327,26 @@ class VehicleService:
 class DriverService:
 
     @staticmethod
-    def list_drivers(user):
+    def list_drivers(user, search=None):
         queryset = Driver.objects.select_related('user')
-        if user.is_admin:
-            return queryset
         if user.is_fleet_manager:
-            return queryset.filter(vehicles__assigned_manager=user).distinct()
-        raise PermissionDenied('Drivers do not have access to the drivers list')
+            queryset = queryset.filter(vehicles__assigned_manager=user).distinct()
+        elif not user.is_admin:
+            raise PermissionDenied('Drivers do not have access to the drivers list')
+        if search:
+            queryset = queryset.filter(
+                models.Q(license_number__icontains=search) | models.Q(user__username__icontains=search)
+                | models.Q(user__first_name__icontains=search) | models.Q(user__last_name__icontains=search)
+                | models.Q(phone_number__icontains=search)
+            )
+        return queryset.order_by('-created_at', '-id')
 
     @staticmethod
     def get_driver(user, driver_id):
         try:
             return DriverService.list_drivers(user).get(id=driver_id)
         except Driver.DoesNotExist:
-            _not_found('Driver not found')
+            raise NotFound('Driver not found')
 
     @staticmethod
     def list_linkable_users(user):
@@ -265,22 +359,23 @@ class DriverService:
     @staticmethod
     def list_assignable(user):
         queryset = Driver.objects.select_related('user')
-        if user.is_admin:
-            return queryset
         if user.is_fleet_manager:
-            return queryset.filter(
+            queryset = queryset.filter(
                 models.Q(vehicles__assigned_manager=user) | models.Q(vehicles__isnull=True)
             ).distinct()
-        raise PermissionDenied('Drivers do not have access to the drivers list')
+        elif not user.is_admin:
+            raise PermissionDenied('Drivers do not have access to the drivers list')
+        return queryset.order_by('-created_at', '-id')
 
     @staticmethod
     def create_driver(actor, data):
         driver = Driver(**data)
         try:
-            driver.full_clean()
-            driver.save()
+            with transaction.atomic():
+                driver.full_clean()
+                driver.save()
         except IntegrityError as exc:
-            raise _integrity_error_to_validation(exc)
+            raise _integrity_error(exc)
 
         audit_logger.info(
             'driver_created', extra={'actor': actor.id, 'action': 'create_driver', 'target': driver.id}
@@ -294,10 +389,14 @@ class DriverService:
             setattr(driver, field, value)
 
         try:
-            driver.full_clean()
-            driver.save()
+            with transaction.atomic():
+                driver.full_clean()
+                driver.save()
         except IntegrityError as exc:
-            raise _integrity_error_to_validation(exc)
+            raise _integrity_error(exc)
+
+        for public_id in driver.vehicles.values_list('vehicle_id', flat=True):
+            _safe_cache_delete(VEHICLE_LOOKUP_CACHE_KEY.format(public_id=public_id), 'invalidate_lookup_cache')
 
         audit_logger.info(
             'driver_updated', extra={'actor': actor.id, 'action': 'update_driver', 'target': driver.id}
@@ -311,7 +410,7 @@ class DriverService:
 
         deleted, _ = Driver.objects.filter(id=driver_id).delete()
         if not deleted:
-            _not_found('Driver not found')
+            raise NotFound('Driver not found')
 
         audit_logger.info(
             'driver_deleted', extra={'actor': actor.id, 'action': 'delete_driver', 'target': driver_id}
@@ -322,9 +421,9 @@ class CompanyService:
 
     @staticmethod
     def get_company():
-        company = Company.objects.first()
+        company = Company.objects.order_by('id').first()
         if company is None:
-            raise ValidationError({'detail': 'Company not found'})
+            raise NotFound('Company not found')
         return company
 
     @staticmethod
@@ -338,20 +437,13 @@ class CompanyService:
             setattr(company, field, value)
 
         try:
-            company.full_clean()
-            company.save()
+            with transaction.atomic():
+                company.full_clean()
+                company.save()
         except IntegrityError as exc:
-            raise _integrity_error_to_validation(exc)
+            raise integrity_error_to_validation(exc, ('name',))
 
         audit_logger.info(
             'company_updated', extra={'actor': actor.id, 'action': 'update_company', 'target': company.id}
         )
         return company
-
-
-def _integrity_error_to_validation(exc):
-    message = str(exc).lower()
-    for field in ('license_plate', 'vin', 'vehicle_id', 'serial_number', 'license_number', 'phone_number'):
-        if field in message:
-            return ValidationError({field: f'{field} already exists'})
-    return ValidationError({'detail': 'Could not save record due to a conflicting record'})
