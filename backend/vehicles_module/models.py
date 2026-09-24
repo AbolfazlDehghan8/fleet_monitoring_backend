@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 
 from fleet_monitoring.validators import (
     iran_driver_license_validator,
@@ -8,6 +9,8 @@ from fleet_monitoring.validators import (
     iran_phone_validator,
     iran_plate_validator,
     obu_serial_validator,
+    validate_vehicle_id,
+    validate_vehicle_year,
     vin_validator,
 )
 
@@ -52,7 +55,13 @@ class Driver(models.Model):
 
     class Meta:
         db_table = 'drivers'
-        indexes = [models.Index(fields=['license_number'])]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['phone_number'],
+                condition=~Q(phone_number=''),
+                name='uniq_driver_phone_when_set',
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user.get_full_name() or self.user.username} ({self.license_number})"
@@ -61,16 +70,10 @@ class Driver(models.Model):
         if self.user_id and not self.user.is_driver:
             raise ValidationError({'user': 'Linked user must have the driver role'})
 
-        if self.phone_number:
-            conflict = Driver.objects.filter(phone_number=self.phone_number)
-            if self.pk:
-                conflict = conflict.exclude(pk=self.pk)
-            if conflict.exists():
-                raise ValidationError({'phone_number': 'phone_number already exists'})
-
     def unique_error_message(self, model_class, unique_check):
-        if unique_check == ('license_number',):
-            return ValidationError('license_number already exists', code='unique')
+        if unique_check in (('license_number',), ('phone_number',)):
+            field = unique_check[0]
+            return ValidationError(f'{field} already exists', code='unique')
         return super().unique_error_message(model_class, unique_check)
 
 
@@ -83,7 +86,7 @@ class Vehicle(models.Model):
         DECOMMISSIONED = 'decommissioned', 'Decommissioned'
 
     vehicle_id = models.CharField(
-        max_length=50, unique=True, db_index=True,
+        max_length=50, unique=True, validators=[validate_vehicle_id],
         error_messages={'unique': 'vehicle_id already exists'},
     )
 
@@ -101,7 +104,7 @@ class Vehicle(models.Model):
     )
     make = models.CharField(max_length=50, blank=True)
     model = models.CharField(max_length=50, blank=True)
-    year = models.PositiveIntegerField(null=True, blank=True)
+    year = models.PositiveIntegerField(null=True, blank=True, validators=[validate_vehicle_year])
 
     status = models.CharField(
         max_length=20, choices=Status.choices, default=Status.ACTIVE, db_index=True
@@ -124,23 +127,33 @@ class Vehicle(models.Model):
     class Meta:
         db_table = 'vehicles'
         ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['vehicle_id']),
-            models.Index(fields=['assigned_manager']),
-            models.Index(fields=['status']),
-        ]
 
     def __str__(self):
         return f"{self.vehicle_id} ({self.license_plate})"
 
+    def _normalize(self):
+        if self.vin is not None:
+            self.vin = self.vin.strip().upper() or None
+
     def clean(self):
+        self._normalize()
+
+        previous = (
+            Vehicle.objects.filter(pk=self.pk).values('assigned_manager_id', 'driver_id').first()
+            if self.pk else None
+        ) or {}
+
         if self.assigned_manager_id and not self.assigned_manager.is_fleet_manager:
-            original_manager_id = (
-                Vehicle.objects.filter(pk=self.pk).values_list('assigned_manager_id', flat=True).first()
-                if self.pk else None
-            )
-            if original_manager_id != self.assigned_manager_id:
+            if previous.get('assigned_manager_id') != self.assigned_manager_id:
                 raise ValidationError({'assigned_manager': 'Assigned manager must have the fleet_manager role'})
+
+        if self.driver_id and not self.driver.is_active:
+            if previous.get('driver_id') != self.driver_id:
+                raise ValidationError({'driver': 'Assigned driver must be active'})
+
+    def save(self, *args, **kwargs):
+        self._normalize()
+        super().save(*args, **kwargs)
 
 
 class OBU(models.Model):
@@ -156,7 +169,17 @@ class OBU(models.Model):
 
     class Meta:
         db_table = 'obus'
-        indexes = [models.Index(fields=['serial_number'])]
 
     def __str__(self):
         return self.serial_number
+
+    def _normalize(self):
+        if self.serial_number:
+            self.serial_number = self.serial_number.strip().upper()
+
+    def clean(self):
+        self._normalize()
+
+    def save(self, *args, **kwargs):
+        self._normalize()
+        super().save(*args, **kwargs)
