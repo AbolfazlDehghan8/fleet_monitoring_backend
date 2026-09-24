@@ -1,11 +1,15 @@
 from rest_framework import serializers
 
 from auth_module.models import User
+from fleet_monitoring.fields import NormalizedCharField
 from fleet_monitoring.validators import (
     iran_driver_license_validator,
     iran_mobile_validator,
     iran_phone_validator,
     iran_plate_validator,
+    obu_serial_validator,
+    validate_vehicle_id,
+    validate_vehicle_year,
 )
 
 from .models import OBU, Company, Driver, Vehicle
@@ -41,29 +45,6 @@ class LinkableUserSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class DriverCreateSerializer(serializers.Serializer):
-    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='driver'))
-    license_number = serializers.CharField(max_length=10, validators=[iran_driver_license_validator])
-    phone_number = serializers.CharField(
-        max_length=11, required=False, allow_blank=True, validators=[iran_mobile_validator]
-    )
-
-    def validate_user(self, user):
-        if Driver.objects.filter(user=user).exists():
-            raise serializers.ValidationError('This user already has a driver profile')
-        return user
-
-
-class DriverUpdateSerializer(serializers.Serializer):
-    license_number = serializers.CharField(
-        max_length=10, required=False, validators=[iran_driver_license_validator]
-    )
-    phone_number = serializers.CharField(
-        max_length=11, required=False, allow_blank=True, validators=[iran_mobile_validator]
-    )
-    is_active = serializers.BooleanField(required=False)
-
-
 class VehicleSerializer(serializers.ModelSerializer):
     driver = DriverSerializer(read_only=True)
     obu = OBUSerializer(read_only=True)
@@ -81,49 +62,6 @@ class VehicleSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
-class VehicleCreateSerializer(serializers.Serializer):
-    vehicle_id = serializers.CharField(max_length=50)
-    license_plate = serializers.CharField(max_length=8, validators=[iran_plate_validator])
-    vin = serializers.CharField(max_length=17, required=False, allow_null=True, allow_blank=True)
-    make = serializers.CharField(max_length=50, required=False, allow_blank=True)
-    model = serializers.CharField(max_length=50, required=False, allow_blank=True)
-    year = serializers.IntegerField(required=False, allow_null=True)
-    status = serializers.ChoiceField(choices=Vehicle.Status.choices, required=False)
-    driver = serializers.PrimaryKeyRelatedField(queryset=Driver.objects.all(), required=False, allow_null=True)
-    assigned_manager = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.filter(role='fleet_manager'), required=False, allow_null=True
-    )
-    obu_serial_number = serializers.CharField(max_length=50, required=False)
-    obu_firmware_version = serializers.CharField(max_length=20, required=False, allow_blank=True)
-
-
-class VehicleAdminUpdateSerializer(serializers.Serializer):
-    license_plate = serializers.CharField(max_length=8, required=False, validators=[iran_plate_validator])
-    vin = serializers.CharField(max_length=17, required=False, allow_null=True, allow_blank=True)
-    make = serializers.CharField(max_length=50, required=False, allow_blank=True)
-    model = serializers.CharField(max_length=50, required=False, allow_blank=True)
-    year = serializers.IntegerField(required=False, allow_null=True)
-    status = serializers.ChoiceField(choices=Vehicle.Status.choices, required=False)
-    driver = serializers.PrimaryKeyRelatedField(queryset=Driver.objects.all(), required=False, allow_null=True)
-    assigned_manager = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.filter(role='fleet_manager'), required=False, allow_null=True
-    )
-    obu_serial_number = serializers.CharField(max_length=50, required=False, allow_null=True)
-    obu_firmware_version = serializers.CharField(max_length=20, required=False, allow_blank=True)
-
-
-class VehicleManagerUpdateSerializer(serializers.Serializer):
-    license_plate = serializers.CharField(max_length=8, required=False, validators=[iran_plate_validator])
-    vin = serializers.CharField(max_length=17, required=False, allow_null=True, allow_blank=True)
-    make = serializers.CharField(max_length=50, required=False, allow_blank=True)
-    model = serializers.CharField(max_length=50, required=False, allow_blank=True)
-    year = serializers.IntegerField(required=False, allow_null=True)
-    status = serializers.ChoiceField(choices=Vehicle.Status.choices, required=False)
-    driver = serializers.PrimaryKeyRelatedField(queryset=Driver.objects.all(), required=False, allow_null=True)
-    obu_serial_number = serializers.CharField(max_length=50, required=False)
-    obu_firmware_version = serializers.CharField(max_length=20, required=False, allow_blank=True)
-
-
 class CompanySerializer(serializers.ModelSerializer):
     class Meta:
         model = Company
@@ -134,11 +72,82 @@ class CompanySerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at', 'updated_at']
 
 
+class VehicleFilterSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=Vehicle.Status.choices, required=False)
+    search = NormalizedCharField(max_length=100, required=False)
+    driver = serializers.IntegerField(required=False, min_value=1)
+    assigned_manager = serializers.IntegerField(required=False, min_value=1)
+
+
+class DriverFilterSerializer(serializers.Serializer):
+    search = NormalizedCharField(max_length=100, required=False)
+
+
+class DriverCreateSerializer(serializers.Serializer):
+    user = serializers.PrimaryKeyRelatedField(queryset=User.objects.filter(role='driver'))
+    license_number = NormalizedCharField(max_length=10, validators=[iran_driver_license_validator])
+    phone_number = NormalizedCharField(
+        max_length=11, required=False, allow_blank=True, validators=[iran_mobile_validator]
+    )
+
+    def validate_user(self, user):
+        if Driver.objects.filter(user=user).exists():
+            raise serializers.ValidationError('This user already has a driver profile')
+        return user
+
+
+class DriverUpdateSerializer(serializers.Serializer):
+    license_number = NormalizedCharField(
+        max_length=10, required=False, validators=[iran_driver_license_validator]
+    )
+    phone_number = NormalizedCharField(
+        max_length=11, required=False, allow_blank=True, validators=[iran_mobile_validator]
+    )
+    is_active = serializers.BooleanField(required=False)
+
+
+class _VehicleWriteBase(serializers.Serializer):
+    license_plate = NormalizedCharField(max_length=8, validators=[iran_plate_validator])
+    vin = NormalizedCharField(max_length=17, required=False, allow_null=True, allow_blank=True)
+    make = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    model = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    year = serializers.IntegerField(required=False, allow_null=True, validators=[validate_vehicle_year])
+    status = serializers.ChoiceField(choices=Vehicle.Status.choices, required=False)
+    driver = serializers.PrimaryKeyRelatedField(queryset=Driver.objects.all(), required=False, allow_null=True)
+    obu_serial_number = NormalizedCharField(
+        max_length=50, required=False, allow_null=True, validators=[obu_serial_validator]
+    )
+    obu_firmware_version = serializers.CharField(max_length=20, required=False, allow_blank=True)
+
+    def validate_vin(self, value):
+        return (value.upper() or None) if value else None
+
+    def validate_obu_serial_number(self, value):
+        return value.upper() if value else value
+
+
+class VehicleCreateSerializer(_VehicleWriteBase):
+    vehicle_id = serializers.CharField(max_length=50, validators=[validate_vehicle_id])
+    assigned_manager = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(role='fleet_manager'), required=False, allow_null=True
+    )
+
+
+class VehicleAdminUpdateSerializer(_VehicleWriteBase):
+    assigned_manager = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.filter(role='fleet_manager'), required=False, allow_null=True
+    )
+
+
+class VehicleManagerUpdateSerializer(_VehicleWriteBase):
+    pass
+
+
 class CompanyUpdateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=150, required=False)
     registration_number = serializers.CharField(max_length=50, required=False, allow_blank=True)
     address = serializers.CharField(max_length=255, required=False, allow_blank=True)
     contact_email = serializers.EmailField(required=False, allow_blank=True)
-    contact_phone = serializers.CharField(
+    contact_phone = NormalizedCharField(
         max_length=11, required=False, allow_blank=True, validators=[iran_phone_validator]
     )
