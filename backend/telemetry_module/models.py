@@ -4,8 +4,19 @@ from django.db import models
 from vehicles_module.models import Vehicle
 
 
+class TelemetryLogQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise ValidationError('Telemetry logs are immutable and cannot be updated.')
+
+    def bulk_update(self, objs, fields, batch_size=None):
+        raise ValidationError('Telemetry logs are immutable and cannot be updated.')
+
+    def delete(self):
+        raise ValidationError('Telemetry logs are immutable and cannot be deleted.')
+
+
 class TelemetryLog(models.Model):
-    vehicle = models.ForeignKey(Vehicle, on_delete=models.CASCADE, related_name='telemetry_logs')
+    vehicle = models.ForeignKey(Vehicle, on_delete=models.PROTECT, related_name='telemetry_logs')
     obu_serial = models.CharField(max_length=50)
 
     timestamp = models.DateTimeField()
@@ -20,6 +31,8 @@ class TelemetryLog(models.Model):
     raw_payload = models.JSONField()
 
     received_at = models.DateTimeField(auto_now_add=True)
+
+    objects = TelemetryLogQuerySet.as_manager()
 
     class Meta:
         db_table = 'telemetry_logs'
