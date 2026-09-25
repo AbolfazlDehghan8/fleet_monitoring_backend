@@ -1,13 +1,15 @@
 import logging
 
 from celery import shared_task
-from celery.exceptions import MaxRetriesExceededError
 from django.conf import settings
 from django.core.mail import send_mail
+from django.db import InterfaceError, OperationalError
 
 from fleet_monitoring.dead_letter import publish_to_dead_letter
 
 logger = logging.getLogger('audit')
+
+TRANSIENT_ERRORS = (OperationalError, InterfaceError, ConnectionError, TimeoutError)
 
 
 @shared_task(
@@ -17,6 +19,7 @@ logger = logging.getLogger('audit')
     retry_backoff=True,
     retry_backoff_max=120,
     queue='alerts.trigger.notify',
+    ignore_result=True,
 )
 def dispatch_alert_notification(self, alert_id):
     from auth_module.models import User
@@ -58,17 +61,19 @@ def dispatch_alert_notification(self, alert_id):
     try:
         send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, list(recipients), fail_silently=False)
     except Exception as exc:
-        try:
-            raise self.retry(exc=exc)
-        except MaxRetriesExceededError:
+        if self.request.retries >= self.max_retries:
+            logger.error(
+                'alert_notification_retries_exhausted',
+                extra={'actor': 'notification_service', 'action': 'dead_letter', 'target': alert.vehicle.vehicle_id},
+            )
             publish_to_dead_letter(
                 source_queue='alerts.trigger.notify',
                 task_name=self.name,
                 payload={'alert_id': alert_id, 'recipients': list(recipients)},
-                reason=f'Retries exhausted: {exc}',
+                reason=f'Retries exhausted: {exc!r}',
             )
             raise
-        return
+        raise self.retry(exc=exc)
 
     logger.info(
         'alert_notification_sent',
