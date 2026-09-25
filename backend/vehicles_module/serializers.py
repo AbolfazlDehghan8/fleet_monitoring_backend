@@ -95,6 +95,13 @@ class DriverCreateSerializer(serializers.Serializer):
             raise serializers.ValidationError('This user already has a driver profile')
         return user
 
+    def validate_phone_number(self, value):
+        if not value:
+            return value
+        if Driver.objects.filter(phone_number=value).exists():
+            raise serializers.ValidationError('phone_number already exists')
+        return value
+
 
 class DriverUpdateSerializer(serializers.Serializer):
     license_number = NormalizedCharField(
@@ -104,6 +111,16 @@ class DriverUpdateSerializer(serializers.Serializer):
         max_length=11, required=False, allow_blank=True, validators=[iran_mobile_validator]
     )
     is_active = serializers.BooleanField(required=False)
+
+    def validate_phone_number(self, value):
+        if not value:
+            return value
+        qs = Driver.objects.filter(phone_number=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError('phone_number already exists')
+        return value
 
 
 class _VehicleWriteBase(serializers.Serializer):
