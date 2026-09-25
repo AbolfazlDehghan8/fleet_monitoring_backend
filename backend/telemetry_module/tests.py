@@ -3,7 +3,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.core.cache import cache
-from django.db import OperationalError, ProtectedError, connection
+from django.db import OperationalError, connection
+from django.db.models import ProtectedError
 from django.test import SimpleTestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
