@@ -1,5 +1,4 @@
-from django.core.exceptions import ValidationError
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -7,10 +6,8 @@ from rest_framework.views import APIView
 
 from auth_module.permissions import IsAdmin
 
-from .models import Rule
-from .serializers import RuleSerializer, RuleWriteSerializer
+from .serializers import RuleListQuerySerializer, RuleSerializer, RuleWriteSerializer
 from .services import RuleService
-from fleet_monitoring.error_utils import validation_error_response
 
 
 class RuleListCreateView(APIView):
@@ -18,32 +15,27 @@ class RuleListCreateView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     @extend_schema(
-        responses={200: RuleSerializer(many=True)},
+        parameters=[OpenApiParameter('is_active', bool, description='Filter by active flag')],
+        responses={200: RuleSerializer(many=True), 400: 'Invalid is_active'},
         summary='List rules',
         description='Optional ?is_active=true/false filter',
     )
     def get(self, request):
-        is_active_param = request.query_params.get('is_active')
-        is_active = None
-        if is_active_param is not None:
-            is_active = is_active_param.lower() == 'true'
-        rules = RuleService.list_rules(is_active=is_active)
+        query = RuleListQuerySerializer(data=request.query_params)
+        query.is_valid(raise_exception=True)
+        rules = RuleService.list_rules(is_active=query.validated_data.get('is_active'))
         return Response(RuleSerializer(rules, many=True).data, status=status.HTTP_200_OK)
 
     @extend_schema(
         request=RuleWriteSerializer,
         responses={201: RuleSerializer, 400: 'Bad Request'},
         summary='Create a rule',
+        description='Takes effect for new telemetry immediately (the rule cache is invalidated).',
     )
     def post(self, request):
         serializer = RuleWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        try:
-            rule = RuleService.create_rule(request.user, serializer.validated_data)
-        except ValidationError as exc:
-            return validation_error_response(exc)
-
+        rule = RuleService.create_rule(request.user, serializer.validated_data)
         return Response(RuleSerializer(rule).data, status=status.HTTP_201_CREATED)
 
 
@@ -53,11 +45,7 @@ class RuleDetailView(APIView):
 
     @extend_schema(responses={200: RuleSerializer, 404: 'Not Found'}, summary='Retrieve a rule')
     def get(self, request, rule_id):
-        try:
-            rule = RuleService.get_rule(rule_id)
-        except Rule.DoesNotExist:
-            return Response({'detail': 'Rule not found'}, status=status.HTTP_404_NOT_FOUND)
-        return Response(RuleSerializer(rule).data, status=status.HTTP_200_OK)
+        return Response(RuleSerializer(RuleService.get_rule(rule_id)).data, status=status.HTTP_200_OK)
 
     @extend_schema(
         request=RuleWriteSerializer,
@@ -65,25 +53,13 @@ class RuleDetailView(APIView):
         summary='Update a rule',
     )
     def patch(self, request, rule_id):
-        try:
-            rule = RuleService.get_rule(rule_id)
-        except Rule.DoesNotExist:
-            return Response({'detail': 'Rule not found'}, status=status.HTTP_404_NOT_FOUND)
-
+        rule = RuleService.get_rule(rule_id)
         serializer = RuleWriteSerializer(instance=rule, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-
-        try:
-            rule = RuleService.update_rule(request.user, rule, serializer.validated_data)
-        except ValidationError as exc:
-            return validation_error_response(exc)
-
+        rule = RuleService.update_rule(request.user, rule, serializer.validated_data)
         return Response(RuleSerializer(rule).data, status=status.HTTP_200_OK)
 
     @extend_schema(responses={204: None, 404: 'Not Found'}, summary='Delete a rule')
     def delete(self, request, rule_id):
-        try:
-            RuleService.delete_rule(request.user, rule_id)
-        except ValidationError:
-            return Response({'detail': 'Rule not found'}, status=status.HTTP_404_NOT_FOUND)
+        RuleService.delete_rule(request.user, rule_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
