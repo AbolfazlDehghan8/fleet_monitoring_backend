@@ -5,7 +5,9 @@ from .models import Alert
 
 class AlertSerializer(serializers.ModelSerializer):
     vehicle_id = serializers.CharField(source='vehicle.vehicle_id', read_only=True)
-    acknowledged_by_username = serializers.CharField(source='acknowledged_by.username', read_only=True)
+    acknowledged_by_username = serializers.CharField(
+        source='acknowledged_by.username', read_only=True, default=None
+    )
 
     class Meta:
         model = Alert
@@ -17,4 +19,4 @@ class AlertSerializer(serializers.ModelSerializer):
 
 
 class AcknowledgeOwnAlertSerializer(serializers.Serializer):
-    alert_id = serializers.IntegerField()
+    alert_id = serializers.IntegerField(min_value=1)
