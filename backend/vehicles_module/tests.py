@@ -852,5 +852,7 @@ class DriverConstraintTests(VehicleTestBase):
 
 class CompanyServiceTests(VehicleTestBase):
     def test_get_company_is_deterministic_oldest_first(self):
+        Company.objects.all().delete()
+        oldest = Company.objects.create(name='Oldest Company')
         Company.objects.create(name='Zzz Later Company')
-        self.assertEqual(CompanyService.get_company().pk, self.company.pk)
+        self.assertEqual(CompanyService.get_company().pk, oldest.pk)
