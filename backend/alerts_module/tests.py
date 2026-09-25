@@ -1,5 +1,9 @@
+from unittest.mock import patch
+
 from django.core.cache import cache
+from django.db import OperationalError, connection
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -10,21 +14,30 @@ from telemetry_module.models import TelemetryLog
 from vehicles_module.models import Company, Driver, Vehicle
 
 from .models import Alert
-from .services import AlertService
+from .services import ALERT_COOLDOWN_CACHE_KEY, AlertService
+from .tasks import dispatch_alert_notification
 
-VIOLATION = {
-    'rule_id': None,
-    'rule_name': 'High engine temperature',
-    'metric': 'engine_temperature',
-    'operator': 'gt',
-    'threshold': 100,
-    'value': 115,
-    'severity': 'high',
-    'vehicle_id': 'veh_alert_1',
-    'telemetry_log_id': None,
-}
+LOCMEM_CACHE = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
 
 
+def _violation(**overrides):
+    violation = {
+        'rule_id': None,
+        'rule_name': 'High engine temperature',
+        'metric': 'engine_temperature',
+        'operator': 'gt',
+        'threshold': 100,
+        'value': 115,
+        'severity': 'high',
+        'vehicle_pk': None,
+        'vehicle_id': 'veh_alert_1',
+        'telemetry_log_id': None,
+    }
+    violation.update(overrides)
+    return violation
+
+
+@override_settings(CACHES=LOCMEM_CACHE)
 class AlertsTestBase(APITestCase):
     def setUp(self):
         cache.clear()
@@ -55,8 +68,15 @@ class AlertsTestBase(APITestCase):
             speed=60, engine_temperature=115, battery_voltage=12.5, fuel_level=50,
             latitude=0, longitude=0, odometer=1000, raw_payload={},
         )
-        violation = dict(VIOLATION, rule_id=self.rule.id, telemetry_log_id=self.log.id)
-        self.alert = AlertService.create_from_violation(violation)
+        self.alert = self._create_alert()
+
+    def _create_alert(self, **overrides):
+        violation = _violation(
+            rule_id=self.rule.id, telemetry_log_id=self.log.id, vehicle_pk=self.vehicle.id,
+        )
+        violation.update(overrides)
+        with patch('alerts_module.tasks.dispatch_alert_notification.apply_async'):
+            return AlertService.create_from_violation(violation)
 
     def _auth_as(self, username, password='StrongPass123'):
         login = self.client.post(reverse('login'), {'username': username, 'password': password})
@@ -74,6 +94,73 @@ class AlertCreationTests(AlertsTestBase):
         self.alert.refresh_from_db()
         self.assertIsNone(self.alert.rule_id)
         self.assertEqual(self.alert.rule_name, 'High engine temperature')
+
+    def test_creation_does_not_query_for_the_vehicle(self):
+        with patch('alerts_module.tasks.dispatch_alert_notification.apply_async'):
+            with CaptureQueriesContext(connection) as queries:
+                AlertService.create_from_violation(_violation(
+                    rule_id=self.rule.id, telemetry_log_id=self.log.id, vehicle_pk=self.vehicle.id,
+                    metric='speed', value=200,
+                ))
+        vehicle_queries = [q for q in queries if 'vehicles' in q['sql'].lower()]
+        self.assertEqual(vehicle_queries, [])
+
+    def test_notification_is_dispatched_after_creation(self):
+        cache.delete(ALERT_COOLDOWN_CACHE_KEY.format(vehicle_pk=self.vehicle.id, rule_id=self.rule.id))
+        with patch('alerts_module.tasks.dispatch_alert_notification.apply_async') as dispatch:
+            alert = AlertService.create_from_violation(_violation(
+                rule_id=self.rule.id, telemetry_log_id=self.log.id, vehicle_pk=self.vehicle.id,
+                metric='speed', value=200,
+            ))
+        dispatch.assert_called_once_with(args=[alert.id], queue='alerts.trigger.notify')
+
+
+class AlertCooldownTests(AlertsTestBase):
+    def test_repeat_violation_within_cooldown_is_suppressed(self):
+        before = Alert.objects.count()
+        with self.assertLogs('audit', level='INFO') as captured:
+            result = self._create_alert()
+        self.assertIsNone(result)
+        self.assertEqual(Alert.objects.count(), before)
+        self.assertTrue(any('alert_suppressed_cooldown' in line for line in captured.output))
+
+    def test_different_rule_on_same_vehicle_is_not_suppressed(self):
+        other_rule = Rule.objects.create(name='Overspeed', metric='speed', operator='gt', threshold=120)
+        before = Alert.objects.count()
+        result = self._create_alert(rule_id=other_rule.id, metric='speed', value=130)
+        self.assertIsNotNone(result)
+        self.assertEqual(Alert.objects.count(), before + 1)
+
+    def test_same_rule_on_different_vehicle_is_not_suppressed(self):
+        other_vehicle = Vehicle.objects.create(
+            vehicle_id='veh_alert_2', license_plate='12ب22222', company=self.company,
+        )
+        before = Alert.objects.count()
+        result = self._create_alert(vehicle_pk=other_vehicle.id, vehicle_id='veh_alert_2')
+        self.assertIsNotNone(result)
+        self.assertEqual(Alert.objects.count(), before + 1)
+
+    def test_cooldown_expiring_allows_a_new_alert(self):
+        cache.delete(ALERT_COOLDOWN_CACHE_KEY.format(vehicle_pk=self.vehicle.id, rule_id=self.rule.id))
+        result = self._create_alert()
+        self.assertIsNotNone(result)
+        self.assertEqual(Alert.objects.count(), 2)
+
+    def test_cache_outage_fails_open_instead_of_losing_the_alert(self):
+        with patch('alerts_module.services.cache') as broken_cache:
+            broken_cache.add.side_effect = ConnectionError('redis down')
+            with self.assertLogs('fleet_monitoring.cache_degradation', level='WARNING'):
+                result = self._create_alert()
+        self.assertIsNotNone(result)
+
+    def test_concurrent_creation_only_raises_one_alert(self):
+        fresh_rule = Rule.objects.create(name='Fresh', metric='fuel_level', operator='lt', threshold=5)
+        before = Alert.objects.count()
+        first = self._create_alert(rule_id=fresh_rule.id, vehicle_pk=self.vehicle.id, metric='fuel_level', value=2)
+        second = self._create_alert(rule_id=fresh_rule.id, vehicle_pk=self.vehicle.id, metric='fuel_level', value=2)
+        self.assertIsNotNone(first)
+        self.assertIsNone(second)
+        self.assertEqual(Alert.objects.count(), before + 1)
 
 
 class AlertReadTests(AlertsTestBase):
@@ -106,6 +193,11 @@ class AlertReadTests(AlertsTestBase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
 
+    def test_deactivated_driver_sees_nothing_via_me_endpoint(self):
+        Driver.objects.filter(pk=self.driver.pk).update(is_active=False)
+        self._auth_as('driveruser')
+        self.assertEqual(self.client.get(reverse('alert-me')).data, [])
+
     def test_driver_cannot_read_other_vehicle_alert_detail(self):
         other_driver_user = User.objects.create_user(
             username='otherdriver', email='od@example.com', password='StrongPass123', role='driver'
@@ -114,6 +206,32 @@ class AlertReadTests(AlertsTestBase):
         self._auth_as('otherdriver')
         response = self.client.get(reverse('alert-detail', args=[self.alert.id]))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_deactivated_driver_cannot_read_own_alert_detail(self):
+        Driver.objects.filter(pk=self.driver.pk).update(is_active=False)
+        self._auth_as('driveruser')
+        response = self.client.get(reverse('alert-detail', args=[self.alert.id]))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unknown_alert_is_404_with_detail(self):
+        self._auth_as('admin')
+        response = self.client.get(reverse('alert-detail', args=[999999]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response.data['detail'], 'Alert not found')
+
+
+class AlertSerializerShapeTests(AlertsTestBase):
+    def test_unacknowledged_alert_reports_null_not_a_missing_key(self):
+        self._auth_as('admin')
+        data = self.client.get(reverse('alert-detail', args=[self.alert.id])).data
+        self.assertIn('acknowledged_by_username', data)
+        self.assertIsNone(data['acknowledged_by_username'])
+
+    def test_acknowledged_alert_reports_the_username(self):
+        self._auth_as('admin')
+        self.client.post(reverse('alert-acknowledge', args=[self.alert.id]))
+        data = self.client.get(reverse('alert-detail', args=[self.alert.id])).data
+        self.assertEqual(data['acknowledged_by_username'], 'admin')
 
 
 class AlertAcknowledgeTests(AlertsTestBase):
@@ -130,6 +248,14 @@ class AlertAcknowledgeTests(AlertsTestBase):
         self.alert.refresh_from_db()
         self.assertTrue(self.alert.acknowledged)
         self.assertEqual(self.alert.acknowledged_by_id, self.driver_user.id)
+
+    def test_deactivated_driver_cannot_acknowledge(self):
+        Driver.objects.filter(pk=self.driver.pk).update(is_active=False)
+        self._auth_as('driveruser')
+        response = self.client.post(reverse('alert-acknowledge', args=[self.alert.id]))
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.alert.refresh_from_db()
+        self.assertFalse(self.alert.acknowledged)
 
     def test_other_fleet_manager_cannot_acknowledge(self):
         self._auth_as('manager2')
@@ -184,18 +310,20 @@ class AlertMeAcknowledgeTests(AlertsTestBase):
         response = self.client.post(reverse('alert-me-acknowledge'), {})
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_negative_alert_id_rejected(self):
+        self._auth_as('driveruser')
+        response = self.client.post(reverse('alert-me-acknowledge'), {'alert_id': -1})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+
+@override_settings(CACHES=LOCMEM_CACHE, EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
 class AlertNotificationTests(AlertsTestBase):
 
-    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
     def test_notification_email_sent_to_assigned_manager_and_admins(self):
         from django.core import mail
 
         mail.outbox = []
-        violation = dict(
-            VIOLATION, rule_id=self.rule.id, telemetry_log_id=self.log.id, vehicle_id='veh_alert_1',
-        )
-        AlertService.create_from_violation(violation)
+        dispatch_alert_notification.apply(args=[self.alert.id])
 
         self.assertEqual(len(mail.outbox), 1)
         sent = mail.outbox[0]
@@ -203,38 +331,44 @@ class AlertNotificationTests(AlertsTestBase):
         self.assertIn(self.admin.email, sent.to)
         self.assertIn('veh_alert_1', sent.subject)
 
-    @override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
     def test_notification_skipped_gracefully_when_no_recipients(self):
         from django.core import mail
 
         User.objects.filter(role='admin').update(is_active=False)
         unassigned_vehicle = Vehicle.objects.create(
-            vehicle_id='veh_alert_unassigned', license_plate='12ب22222', company=self.company
+            vehicle_id='veh_alert_unassigned', license_plate='12ب33333', company=self.company
         )
-        log = TelemetryLog.objects.create(
-            vehicle=unassigned_vehicle, obu_serial='OBU-2026-0002', timestamp='2025-07-12T00:00:00Z',
-            speed=10, engine_temperature=90, battery_voltage=12, fuel_level=50,
-            latitude=0, longitude=0, odometer=10, raw_payload={},
+        alert = Alert.objects.create(
+            vehicle=unassigned_vehicle, rule_id=self.rule.id, rule_name='x', metric='speed',
+            threshold=100, value=120, severity='low',
         )
         mail.outbox = []
-        violation = dict(
-            VIOLATION, rule_id=self.rule.id, telemetry_log_id=log.id, vehicle_id='veh_alert_unassigned',
-        )
-        AlertService.create_from_violation(violation)
+        dispatch_alert_notification.apply(args=[alert.id])
         self.assertEqual(len(mail.outbox), 0)
 
+    def test_notification_skipped_gracefully_when_alert_was_deleted(self):
+        from django.core import mail
 
-class DeadLetterQueueTests(AlertsTestBase):
-    def test_publish_to_dead_letter_does_not_raise_when_broker_unreachable(self):
-        from fleet_monitoring.dead_letter import publish_to_dead_letter
+        mail.outbox = []
+        with self.assertLogs('audit', level='WARNING'):
+            dispatch_alert_notification.apply(args=[999999])
+        self.assertEqual(len(mail.outbox), 0)
 
-        with override_settings(CELERY_BROKER_URL='amqp://guest:guest@127.0.0.1:1/nonexistent'):
-            try:
-                publish_to_dead_letter(
-                    source_queue='telemetry.raw.process',
-                    task_name='telemetry_module.tasks.process_telemetry_packet',
-                    payload={'vehicle_id': 'veh_x'},
-                    reason='simulated failure',
+    def test_transient_send_failure_is_retried_then_dead_lettered_when_exhausted(self):
+        with patch('alerts_module.tasks.send_mail', side_effect=OperationalError('smtp relay down')) as send, \
+                patch('alerts_module.tasks.publish_to_dead_letter') as dlq:
+            with self.assertRaises(OperationalError):
+                dispatch_alert_notification.apply(
+                    args=[self.alert.id], retries=dispatch_alert_notification.max_retries,
                 )
-            except Exception as exc:
-                self.fail(f'publish_to_dead_letter raised unexpectedly: {exc}')
+        self.assertEqual(send.call_count, 1)
+        dlq.assert_called_once()
+        self.assertIn('Retries exhausted', dlq.call_args.kwargs['reason'])
+        self.assertEqual(dlq.call_args.kwargs['payload']['alert_id'], self.alert.id)
+
+    def test_send_failure_below_the_retry_limit_does_not_dead_letter(self):
+        with patch('alerts_module.tasks.send_mail', side_effect=OperationalError('smtp relay down')), \
+                patch('alerts_module.tasks.publish_to_dead_letter') as dlq:
+            with self.assertRaises(Exception):
+                dispatch_alert_notification.apply(args=[self.alert.id], retries=0)
+        dlq.assert_not_called()
