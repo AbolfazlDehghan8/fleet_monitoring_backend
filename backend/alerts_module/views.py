@@ -1,6 +1,5 @@
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -39,15 +38,9 @@ class AlertDetailView(APIView):
 
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(responses={200: AlertSerializer, 404: 'Not Found'}, summary='Retrieve an alert')
+    @extend_schema(responses={200: AlertSerializer, 403: 'Forbidden', 404: 'Not Found'}, summary='Retrieve an alert')
     def get(self, request, alert_id):
-        try:
-            alert = AlertService.get_alert(request.user, alert_id)
-        except PermissionDenied as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
-
-        if alert is None:
-            return Response({'detail': 'Alert not found'}, status=status.HTTP_404_NOT_FOUND)
+        alert = AlertService.get_alert(request.user, alert_id)
         return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
 
 
@@ -61,13 +54,7 @@ class AlertAcknowledgeView(APIView):
         description='Idempotent: acknowledging an already-acknowledged alert is a no-op that still returns 200',
     )
     def post(self, request, alert_id):
-        try:
-            alert = AlertService.acknowledge(request.user, alert_id)
-        except PermissionDenied as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
-
-        if alert is None:
-            return Response({'detail': 'Alert not found'}, status=status.HTTP_404_NOT_FOUND)
+        alert = AlertService.acknowledge(request.user, alert_id)
         return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
 
 
@@ -83,12 +70,5 @@ class AlertMeAcknowledgeView(APIView):
     def post(self, request):
         serializer = AcknowledgeOwnAlertSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-
-        try:
-            alert = AlertService.acknowledge(request.user, serializer.validated_data['alert_id'])
-        except PermissionDenied as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
-
-        if alert is None:
-            return Response({'detail': 'Alert not found'}, status=status.HTTP_404_NOT_FOUND)
+        alert = AlertService.acknowledge(request.user, serializer.validated_data['alert_id'])
         return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
