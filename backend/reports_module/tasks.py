@@ -2,6 +2,8 @@ import logging
 
 from celery import shared_task
 
+from .models import Report
+
 logger = logging.getLogger('audit')
 
 
@@ -12,13 +14,17 @@ def generate_report_task(self, report_id):
     try:
         ReportService.run_report(report_id)
     except Exception as exc:
+        if self.request.retries >= self.max_retries:
+            logger.error(
+                'report_task_retries_exhausted',
+                extra={'actor': 'scheduler', 'action': 'generate_report', 'target': str(report_id)},
+            )
+            raise
         raise self.retry(exc=exc)
 
 
 @shared_task(queue='reports.generate')
 def generate_scheduled_fleet_report():
-    from .models import Report
-
     report = Report.objects.create(requested_by=None, status=Report.Status.PENDING)
     generate_report_task.apply_async(args=[report.id], queue='reports.generate')
 
