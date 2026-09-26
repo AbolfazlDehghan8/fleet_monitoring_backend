@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
-import { RULE_METRICS, RULE_OPERATORS, SEVERITIES } from '@/constants/statuses';
+import { RULE_METRIC_RANGES, RULE_METRICS, RULE_OPERATORS, SEVERITIES } from '@/constants/statuses';
 import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
 import { getApiErrorMessage } from '@/i18n/apiErrors';
@@ -23,15 +23,28 @@ import { getApiErrorMessage } from '@/i18n/apiErrors';
 import { useCreateRule, useRule, useUpdateRule } from './hooks';
 
 function useRuleSchema(t: (key: TranslationKey, vars?: Record<string, string | number>) => string) {
-  return z.object({
-    name: z.string().min(1, t('ruleForm.nameRequired')).max(200, t('validation.maxLength', { max: 200 })),
-    description: z.string().max(1000, t('validation.maxLength', { max: 1000 })).optional(),
-    metric: z.enum(['speed', 'engine_temperature', 'battery_voltage', 'fuel_level', 'odometer']),
-    operator: z.enum(['gt', 'gte', 'lt', 'lte', 'eq']),
-    threshold: z.coerce.number({ invalid_type_error: t('ruleForm.thresholdInvalid') }),
-    severity: z.enum(['low', 'medium', 'high', 'critical']),
-    is_active: z.boolean(),
-  });
+  return z
+    .object({
+      name: z.string().min(1, t('ruleForm.nameRequired')).max(200, t('validation.maxLength', { max: 200 })),
+      description: z.string().max(1000, t('validation.maxLength', { max: 1000 })).optional(),
+      metric: z.enum(['speed', 'engine_temperature', 'battery_voltage', 'fuel_level', 'odometer']),
+      operator: z.enum(['gt', 'gte', 'lt', 'lte', 'eq']),
+      threshold: z.coerce.number({ invalid_type_error: t('ruleForm.thresholdInvalid') }),
+      severity: z.enum(['low', 'medium', 'high', 'critical']),
+      is_active: z.boolean(),
+    })
+    .superRefine((values, ctx) => {
+      // Mirrors the backend's physical range per metric (see RULE_METRIC_RANGES) — a
+      // threshold outside it could never fire and the server rejects it.
+      const range = RULE_METRIC_RANGES[values.metric];
+      if (Number.isFinite(values.threshold) && (values.threshold < range.min || values.threshold > range.max)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['threshold'],
+          message: t('ruleForm.thresholdOutOfRange', { min: range.min, max: range.max }),
+        });
+      }
+    });
 }
 
 type RuleFormValues = {
@@ -60,6 +73,7 @@ export function RuleFormPage() {
     register,
     handleSubmit,
     control,
+    watch,
     formState: { errors, isSubmitting },
   } = useForm<RuleFormValues>({
     resolver: zodResolver(ruleSchema),
@@ -193,7 +207,13 @@ export function RuleFormPage() {
               <div className="space-y-1.5">
                 <Label htmlFor="threshold">{t('ruleForm.threshold')}</Label>
                 <Input id="threshold" type="number" step="any" {...register('threshold')} />
-                {errors.threshold && <p className="text-xs text-destructive">{errors.threshold.message}</p>}
+                {errors.threshold ? (
+                  <p className="text-xs text-destructive">{errors.threshold.message}</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    {t('ruleForm.thresholdRangeHint', RULE_METRIC_RANGES[watch('metric')])}
+                  </p>
+                )}
               </div>
             </div>
 

@@ -44,3 +44,10 @@ export const OBU_SERIAL_REGEX = /^OBU-\d{4}-\d{4,}$/i;
  * license format. e.g. 1234567890
  */
 export const IRAN_LICENSE_NUMBER_REGEX = /^\d{10}$/;
+
+/**
+ * Vehicle identifier: ASCII letters/digits, then letters/digits/._- up to 50
+ * characters (it's used in URLs, cache keys, logs, and telemetry packets, so
+ * no spaces or non-ASCII characters). e.g. veh_8a3f2b1c
+ */
+export const VEHICLE_ID_REGEX = /^[A-Za-z0-9][A-Za-z0-9._-]{0,49}$/;

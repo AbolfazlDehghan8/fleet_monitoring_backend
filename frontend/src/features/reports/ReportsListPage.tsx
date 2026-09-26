@@ -118,14 +118,20 @@ export function ReportsListPage() {
     {
       id: 'period',
       header: t('reports.colPeriod'),
-      cell: (row) =>
-        row.period_start && row.period_end ? (
+      cell: (row) => {
+        // Reports created without explicit dates store null period_start/end; the
+        // backend resolves the default window (last 30 days) at run time and
+        // records it in result.period, so fall back to that before giving up.
+        const start = row.period_start ?? row.result?.period?.start;
+        const end = row.period_end ?? row.result?.period?.end;
+        return start && end ? (
           <span className="text-xs text-muted-foreground">
-            {formatDateTime(row.period_start)} → {formatDateTime(row.period_end)}
+            {formatDateTime(start)} → {formatDateTime(end)}
           </span>
         ) : (
           <span className="text-xs text-muted-foreground">{t('common.notAvailable')}</span>
-        ),
+        );
+      },
     },
     {
       id: 'status',

@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { BrowserRouter } from 'react-router-dom';
 
 import { Toaster } from '@/components/ui/toaster';
@@ -28,7 +27,6 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
             <Toaster />
           </LanguageProvider>
         </ThemeProvider>
-        {import.meta.env.DEV && <ReactQueryDevtools initialIsOpen={false} />}
       </QueryClientProvider>
     </BrowserRouter>
   );

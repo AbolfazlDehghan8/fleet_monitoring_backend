@@ -22,7 +22,7 @@ import type { TranslationKey } from '@/i18n/translations';
 import type { VehicleUpdateRequest } from '@/types/vehicles';
 import { ApiError } from '@/types/common';
 import { getApiErrorMessage } from '@/i18n/apiErrors';
-import { IRAN_PLATE_REGEX, OBU_SERIAL_REGEX, VIN_REGEX } from '@/utils/iranValidators';
+import { IRAN_PLATE_REGEX, OBU_SERIAL_REGEX, VEHICLE_ID_REGEX, VIN_REGEX } from '@/utils/iranValidators';
 import { gregorianYearToJalali, jalaliYearToGregorian } from '@/utils/jalali';
 
 import { useAssignableDrivers, useCreateVehicle, useUpdateVehicle, useVehicle } from './hooks';
@@ -32,14 +32,28 @@ const NONE = '__none__';
 function useVehicleSchema(
   t: (key: TranslationKey, vars?: Record<string, string | number>) => string,
   language: 'en' | 'fa',
+  isEditing: boolean,
 ) {
   // The year field is displayed (and entered) in Shamsi in the Persian UI, so
   // the acceptable range shifts accordingly; it stays Gregorian in English.
-  const yearMin = language === 'fa' ? gregorianYearToJalali(1900) : 1900;
-  const yearMax = language === 'fa' ? gregorianYearToJalali(2100) : 2100;
+  // The value is always converted to a real Gregorian year before it's sent (see
+  // onSubmit below), so these bounds must match the backend's actual accepted
+  // Gregorian window (fleet_monitoring.validators.validate_vehicle_year: 1950 to
+  // next year) — not the wider range this used to allow, which could produce a
+  // year the backend then rejected.
+  const currentGregorianYear = new Date().getFullYear();
+  const yearMin = language === 'fa' ? gregorianYearToJalali(1950) : 1950;
+  const yearMax = language === 'fa' ? gregorianYearToJalali(currentGregorianYear + 1) : currentGregorianYear + 1;
 
   return z.object({
-    vehicle_id: z.string().min(1, t('vehicleForm.vehicleIdErr')).max(50, t('validation.maxLength', { max: 50 })),
+    vehicle_id: z
+      .string()
+      .min(1, t('vehicleForm.vehicleIdErr'))
+      .max(50, t('validation.maxLength', { max: 50 }))
+      // vehicle_id is locked (disabled input) once editing, so a pre-existing legacy
+      // value that predates this format rule must not block saving unrelated field
+      // changes — the field only gets format-checked when it's actually editable.
+      .refine((val) => isEditing || VEHICLE_ID_REGEX.test(val), { message: t('vehicleForm.vehicleIdFormatErr') }),
     license_plate: z
       .string()
       .min(1, t('vehicleForm.licensePlateErr'))
@@ -105,7 +119,7 @@ export function VehicleFormPage() {
   const driversQuery = useAssignableDrivers();
   const createMutation = useCreateVehicle();
   const updateMutation = useUpdateVehicle(vehicleId ?? -1);
-  const vehicleSchema = useVehicleSchema(t, language);
+  const vehicleSchema = useVehicleSchema(t, language, isEditing);
   const submitLockRef = React.useRef(false);
 
   // Only admins can reassign a vehicle's manager, and only admins can query

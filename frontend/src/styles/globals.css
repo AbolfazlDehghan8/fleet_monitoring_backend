@@ -154,3 +154,25 @@ html.font-fa body {
 [dir='rtl'] .lucide-chevron-right {
   transform: scaleX(-1);
 }
+
+/* Login page carousel: Swiper's default pagination bullets are positioned
+   absolutely over the slide content. Persian slide text is often taller
+   (longer words, line-wrapping) than the English text, so the bullets end
+   up sitting on top of the last line instead of below it. Taking the
+   bullets out of absolute positioning and back into normal flow (with
+   autoHeight on the Swiper instance) keeps them cleanly below the text in
+   both languages, regardless of how many lines the text wraps to. */
+.login-carousel {
+  padding-bottom: 0;
+}
+.login-carousel .swiper-pagination {
+  position: static;
+  margin-top: 1.5rem;
+}
+.login-carousel .swiper-pagination-bullet {
+  background: currentColor;
+  opacity: 0.5;
+}
+.login-carousel .swiper-pagination-bullet-active {
+  opacity: 1;
+}

@@ -91,6 +91,19 @@ export const RULE_METRICS = [
 export type RuleMetric = (typeof RULE_METRICS)[number]['value'];
 
 /**
+ * Physical limits per metric. Mirrors `fleet_monitoring.metrics.METRIC_RANGES` exactly —
+ * the backend rejects a rule threshold outside these bounds (it could never fire), so the
+ * form validates the same range up front instead of round-tripping to find out.
+ */
+export const RULE_METRIC_RANGES: Record<RuleMetric, { min: number; max: number }> = {
+  speed: { min: 0, max: 500 },
+  engine_temperature: { min: -60, max: 300 },
+  battery_voltage: { min: 0, max: 50 },
+  fuel_level: { min: 0, max: 100 },
+  odometer: { min: 0, max: 10_000_000 },
+};
+
+/**
  * Mirrors `rules_module.models.RULE_OPERATOR_CHOICES` exactly.
  */
 export const RULE_OPERATORS = [

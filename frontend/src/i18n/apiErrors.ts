@@ -23,8 +23,19 @@ const FIELD_LABEL_KEYS: Record<string, TranslationKey> = {
   vin: 'apiError.field.vin',
   vehicle_id: 'apiError.field.vehicle_id',
   serial_number: 'apiError.field.serial_number',
+  obu_serial_number: 'apiError.field.serial_number',
+  obu_serial: 'apiError.field.serial_number',
   license_number: 'apiError.field.license_number',
   phone_number: 'apiError.field.phone_number',
+};
+
+/** metric field name -> its existing `ruleMetric.*` label key, reused for error messages. */
+const RULE_METRIC_LABEL_KEYS: Record<string, TranslationKey> = {
+  speed: 'ruleMetric.speed',
+  engine_temperature: 'ruleMetric.engine_temperature',
+  battery_voltage: 'ruleMetric.battery_voltage',
+  fuel_level: 'ruleMetric.fuel_level',
+  odometer: 'ruleMetric.odometer',
 };
 
 /** Exact raw backend message -> translation key. */
@@ -85,6 +96,22 @@ const EXACT_MESSAGES: Record<string, TranslationKey> = {
   'A valid number is required.': 'apiError.invalidNumber',
   'A valid integer is required.': 'apiError.invalidInteger',
   'License number must be exactly 10 digits.': 'apiError.invalidLicenseNumber',
+  'Enter a valid username. This value may contain only unicode letters, numbers, and @/./+/-/_ characters.':
+    'apiError.invalidUsernameFormat',
+  'Too many failed login attempts. Try again later.': 'apiError.tooManyLoginAttempts',
+  'Self-registration is disabled': 'apiError.selfRegistrationDisabled',
+  'You cannot demote or deactivate your own account': 'apiError.cannotSelfDemote',
+  'You cannot delete your own account': 'apiError.cannotSelfDelete',
+  'Cannot remove the last active admin': 'apiError.cannotRemoveLastAdmin',
+  'Vehicle has recorded telemetry or alerts and cannot be deleted; set its status to decommissioned instead':
+    'apiError.vehicleHasHistoryCannotDelete',
+  'You do not have access to this driver': 'apiError.noDriverAccess',
+  'Assigned driver must be active': 'apiError.driverMustBeActive',
+  'timestamp is in the future': 'apiError.telemetryTimestampFuture',
+  'timestamp is older than the retention period': 'apiError.telemetryTimestampTooOld',
+  'OBU serial does not match the OBU registered for this vehicle': 'apiError.obuSerialMismatch',
+  'Vehicle is decommissioned and no longer accepts telemetry': 'apiError.vehicleDecommissionedNoTelemetry',
+  'Threshold must be a finite number.': 'apiError.thresholdMustBeFinite',
 };
 
 /** Parametrized backend messages, matched with a regex. */
@@ -131,11 +158,28 @@ const PATTERN_MESSAGES: Array<{
     key: 'apiError.passwordTooShort',
     vars: (m) => ({ count: m[1] }),
   },
+  {
+    // e.g. "Threshold for battery_voltage must be between 0 and 50."
+    pattern: /^Threshold for (\w+) must be between (-?[\d.]+) and (-?[\d.]+)\.$/,
+    key: 'apiError.thresholdOutOfRange',
+    vars: (m, t) => ({ metric: ruleMetricLabel(m[1], t), min: m[2], max: m[3] }),
+  },
+  {
+    // e.g. "Date range cannot exceed 366 days"
+    pattern: /^Date range cannot exceed (\d+) days$/,
+    key: 'apiError.dateRangeTooLong',
+    vars: (m) => ({ days: m[1] }),
+  },
 ];
 
 function fieldLabel(field: string, t: Translate): string {
   const key = FIELD_LABEL_KEYS[field];
   return key ? t(key) : field;
+}
+
+function ruleMetricLabel(metric: string, t: Translate): string {
+  const key = RULE_METRIC_LABEL_KEYS[metric];
+  return key ? t(key) : metric;
 }
 
 /**

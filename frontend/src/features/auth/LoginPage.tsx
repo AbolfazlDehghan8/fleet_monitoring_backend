@@ -95,7 +95,8 @@ export function LoginPage() {
             autoplay={{ delay: 4500, disableOnInteraction: false }}
             pagination={{ clickable: true }}
             loop
-            className="pb-10"
+            autoHeight
+            className="login-carousel"
           >
             {slides.map((slide) => (
               <SwiperSlide key={slide.title}>
