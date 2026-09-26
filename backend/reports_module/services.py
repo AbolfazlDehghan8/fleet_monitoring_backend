@@ -3,9 +3,9 @@ import io
 import logging
 from datetime import timedelta
 
-from django.db.models import Avg, DurationField, ExpressionWrapper, F, Max, Min
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, Min, Q
 from django.utils import timezone
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied
 
 from alerts_module.models import Alert
 from telemetry_module.models import TelemetryLog
@@ -30,16 +30,16 @@ class ReportService:
 
     @staticmethod
     def _build_summary(vehicles, start_date, end_date):
-        status_counts = {}
-        for vehicle_status in vehicles.values_list('status', flat=True):
-            status_counts[vehicle_status] = status_counts.get(vehicle_status, 0) + 1
+        status_counts = dict(
+            vehicles.order_by().values_list('status').annotate(count=Count('id'))
+        )
 
         telemetry_qs = TelemetryLog.objects.filter(
             vehicle__in=vehicles, timestamp__gte=start_date, timestamp__lte=end_date,
         )
-        total_readings = telemetry_qs.count()
-        avg_speed = telemetry_qs.aggregate(avg=Avg('speed'))['avg']
-        avg_fuel_level = telemetry_qs.aggregate(avg=Avg('fuel_level'))['avg']
+        telemetry_totals = telemetry_qs.aggregate(
+            total_readings=Count('id'), avg_speed=Avg('speed'), avg_fuel_level=Avg('fuel_level'),
+        )
 
         distance_traveled_km = 0.0
         odometer_bounds = telemetry_qs.values('vehicle').annotate(
@@ -51,32 +51,40 @@ class ReportService:
         alerts_qs = Alert.objects.filter(
             vehicle__in=vehicles, created_at__gte=start_date, created_at__lte=end_date,
         )
-        alerts_by_severity = {}
-        for severity in alerts_qs.values_list('severity', flat=True):
-            alerts_by_severity[severity] = alerts_by_severity.get(severity, 0) + 1
+        alert_totals = alerts_qs.aggregate(
+            total=Count('id'),
+            acknowledged=Count('id', filter=Q(acknowledged=True)),
+        )
+        alerts_by_severity = dict(
+            alerts_qs.order_by().values_list('severity').annotate(count=Count('id'))
+        )
 
-        acknowledged_qs = alerts_qs.filter(acknowledged=True, acknowledged_at__isnull=False)
-        avg_ack_seconds = acknowledged_qs.annotate(
+        avg_ack_seconds = alerts_qs.filter(
+            acknowledged=True, acknowledged_at__isnull=False,
+        ).annotate(
             response_time=ExpressionWrapper(
                 F('acknowledged_at') - F('created_at'), output_field=DurationField(),
             )
         ).aggregate(avg=Avg('response_time'))['avg']
+
+        avg_speed = telemetry_totals['avg_speed']
+        avg_fuel_level = telemetry_totals['avg_fuel_level']
 
         return {
             'period': {'start': start_date.isoformat(), 'end': end_date.isoformat()},
             'vehicle_count': vehicles.count(),
             'vehicles_by_status': status_counts,
             'telemetry': {
-                'total_readings': total_readings,
+                'total_readings': telemetry_totals['total_readings'],
                 'avg_speed': round(avg_speed, 2) if avg_speed is not None else None,
                 'avg_fuel_level': round(avg_fuel_level, 2) if avg_fuel_level is not None else None,
                 'distance_traveled_km': round(distance_traveled_km, 2),
             },
             'alerts': {
-                'total': alerts_qs.count(),
+                'total': alert_totals['total'],
                 'by_severity': alerts_by_severity,
-                'acknowledged': acknowledged_qs.count(),
-                'unacknowledged': alerts_qs.filter(acknowledged=False).count(),
+                'acknowledged': alert_totals['acknowledged'],
+                'unacknowledged': alert_totals['total'] - alert_totals['acknowledged'],
                 'avg_acknowledgment_time_seconds': (
                     round(avg_ack_seconds.total_seconds(), 1) if avg_ack_seconds is not None else None
                 ),
@@ -115,7 +123,15 @@ class ReportService:
 
     @staticmethod
     def run_report(report_id):
-        report = Report.objects.get(id=report_id)
+        try:
+            report = Report.objects.get(id=report_id)
+        except Report.DoesNotExist:
+            audit_logger.warning(
+                'report_run_skipped_not_found',
+                extra={'actor': 'scheduler', 'action': 'generate_report', 'target': str(report_id)},
+            )
+            return None
+
         report.status = Report.Status.RUNNING
         report.save(update_fields=['status'])
 
@@ -163,7 +179,7 @@ class ReportService:
         try:
             report = Report.objects.get(id=report_id)
         except Report.DoesNotExist:
-            return None
+            raise NotFound('Report not found')
 
         if not user.is_admin and report.requested_by_id != user.id:
             raise PermissionDenied('This report was not requested by you')
@@ -196,20 +212,13 @@ class ReportService:
 
     @staticmethod
     def delete_report(user, report_id):
-        try:
-            report = Report.objects.get(id=report_id)
-        except Report.DoesNotExist:
-            return None
-
-        if not user.is_admin and report.requested_by_id != user.id:
-            raise PermissionDenied('This report was not requested by you')
-
+        report = ReportService.get_report(user, report_id)
+        report_id = report.id
         report.delete()
         audit_logger.info(
             'report_deleted',
             extra={'actor': user.id if user else 'system', 'action': 'delete_report', 'target': str(report_id)},
         )
-        return True
 
     @staticmethod
     def list_reports(user):
