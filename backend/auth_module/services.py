@@ -297,10 +297,11 @@ class UserService:
 
         with transaction.atomic():
             try:
-                user = User.objects.get(id=user_id)
+                user = User.objects.select_for_update().get(id=user_id)
             except User.DoesNotExist:
                 raise NotFound('User not found')
 
+            previous_role = user.role
             new_role = data.get('role', user.role)
             new_active = data.get('is_active', user.is_active)
             loses_admin = user.is_admin and user.is_active and (new_role != User.Role.ADMIN or not new_active)
@@ -322,8 +323,31 @@ class UserService:
             if not new_active:
                 _revoke_all_refresh_tokens(user.id)
 
+            UserService._sync_role_side_effects(user, previous_role, new_role, new_active)
+
         audit_logger.info('user_updated_by_admin', extra={'actor': actor.id, 'action': 'admin_update_user', 'target': user.id})
         return user
+
+    @staticmethod
+    def _sync_role_side_effects(user, previous_role, new_role, new_active):
+        from vehicles_module.models import Driver, Vehicle
+
+        stops_being_driver = previous_role == User.Role.DRIVER and (
+            new_role != User.Role.DRIVER or not new_active
+        )
+        if stops_being_driver:
+            driver_profile = Driver.objects.filter(user_id=user.id).first()
+            if driver_profile:
+                Vehicle.objects.filter(driver_id=driver_profile.id).update(driver=None)
+                if driver_profile.is_active:
+                    driver_profile.is_active = False
+                    driver_profile.save(update_fields=['is_active', 'updated_at'])
+
+        stops_being_manager = previous_role == User.Role.FLEET_MANAGER and (
+            new_role != User.Role.FLEET_MANAGER or not new_active
+        )
+        if stops_being_manager:
+            Vehicle.objects.filter(assigned_manager_id=user.id).update(assigned_manager=None)
 
     @staticmethod
     def delete_user(actor, user_id):
