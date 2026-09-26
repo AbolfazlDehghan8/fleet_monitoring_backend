@@ -1,6 +1,8 @@
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.core.cache import cache
+from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -15,6 +17,10 @@ from vehicles_module.models import Company, Vehicle
 from .services import ReportService
 
 
+LOCMEM_CACHE = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
+
+
+@override_settings(CACHES=LOCMEM_CACHE)
 class ReportsTestBase(APITestCase):
     def setUp(self):
         cache.clear()
@@ -117,9 +123,10 @@ class ReportAggregationTests(ReportsTestBase):
         violation = {
             'rule_id': self.rule.id, 'rule_name': self.rule.name, 'metric': 'engine_temperature',
             'operator': 'gt', 'threshold': 999, 'value': 1000, 'severity': 'critical',
-            'vehicle_id': 'veh_r1', 'telemetry_log_id': None,
+            'vehicle_pk': self.vehicle1.id, 'vehicle_id': 'veh_r1', 'telemetry_log_id': None,
         }
-        self.alert = AlertService.create_from_violation(violation)
+        with patch('alerts_module.tasks.dispatch_alert_notification.apply_async'):
+            self.alert = AlertService.create_from_violation(violation)
 
     def test_telemetry_aggregation(self):
         report = ReportService.generate_fleet_summary(self.admin, vehicle_id='veh_r1')
@@ -328,3 +335,109 @@ class ReportRequesterVisibilityTests(ReportsTestBase):
         system_report = next(row for row in listing.data if row['requested_by'] is None)
         self.assertIsNone(system_report['requested_by_username'])
         self.assertIsNone(system_report['requested_by_role'])
+
+
+class ReportWindowLimitTests(ReportsTestBase):
+    def test_window_over_the_limit_is_rejected(self):
+        self._auth_as('admin')
+        end = timezone.now()
+        start = end - timedelta(days=400)
+        response = self.client.get(reverse('report-fleet-summary'), {
+            'start_date': start.isoformat(), 'end_date': end.isoformat(),
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('end_date', response.data)
+
+    def test_window_at_the_limit_is_accepted(self):
+        self._auth_as('admin')
+        end = timezone.now()
+        start = end - timedelta(days=366)
+        response = self.client.get(reverse('report-fleet-summary'), {
+            'start_date': start.isoformat(), 'end_date': end.isoformat(),
+        })
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_window_limit_also_applies_to_async_generation(self):
+        self._auth_as('admin')
+        end = timezone.now()
+        start = end - timedelta(days=400)
+        response = self.client.post(reverse('report-generate'), {
+            'start_date': start.isoformat(), 'end_date': end.isoformat(),
+        })
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_open_ended_range_is_not_limited(self):
+        self._auth_as('admin')
+        very_old = timezone.now() - timedelta(days=2000)
+        response = self.client.get(reverse('report-fleet-summary'), {'start_date': very_old.isoformat()})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+
+class ReportAggregationCorrectnessTests(ReportsTestBase):
+    def setUp(self):
+        super().setUp()
+        for vehicle, status_value in (
+            (self.vehicle1, 'active'), (self.vehicle2, 'active'),
+        ):
+            Vehicle.objects.filter(pk=vehicle.pk).update(status=status_value)
+        self.vehicle3 = Vehicle.objects.create(
+            vehicle_id='veh_r3', license_plate='12ب33333', company=self.company, status='maintenance',
+        )
+        self.rule = Rule.objects.create(
+            name='Low fuel', metric='fuel_level', operator='lt', threshold=10, severity='medium',
+        )
+        for severity, count in (('high', 2), ('critical', 1), ('low', 3)):
+            for n in range(count):
+                with patch('alerts_module.tasks.dispatch_alert_notification.apply_async'):
+                    AlertService.create_from_violation({
+                        'rule_id': self.rule.id, 'rule_name': 'x', 'metric': 'fuel_level',
+                        'operator': 'lt', 'threshold': 10, 'value': 5, 'severity': severity,
+                        'vehicle_pk': self.vehicle1.id if n == 0 else self.vehicle2.id,
+                        'vehicle_id': 'veh_r1' if n == 0 else 'veh_r2',
+                        'telemetry_log_id': None,
+                    })
+
+    def test_vehicles_by_status_matches_actual_counts(self):
+        self._auth_as('admin')
+        response = self.client.get(reverse('report-fleet-summary'))
+        self.assertEqual(response.data['vehicles_by_status'], {'active': 2, 'maintenance': 1})
+        self.assertEqual(response.data['vehicle_count'], 3)
+
+    def test_alerts_by_severity_matches_actual_counts(self):
+        self._auth_as('admin')
+        response = self.client.get(reverse('report-fleet-summary'))
+        by_severity = response.data['alerts']['by_severity']
+        self.assertEqual(sum(by_severity.values()), response.data['alerts']['total'])
+        self.assertEqual(
+            response.data['alerts']['total'],
+            response.data['alerts']['acknowledged'] + response.data['alerts']['unacknowledged'],
+        )
+
+
+class ReportTaskFailureHandlingTests(ReportsTestBase):
+    def test_deleted_report_is_not_retried(self):
+        from .models import Report
+        from .tasks import generate_report_task
+
+        report = Report.objects.create(requested_by=self.admin, status=Report.Status.PENDING)
+        report_id = report.id
+        report.delete()
+
+        with self.assertLogs('audit', level='WARNING') as captured:
+            generate_report_task.apply(args=[report_id])
+        self.assertTrue(any('report_run_skipped_not_found' in line for line in captured.output))
+
+    def test_permanent_failure_marks_report_failed_and_stores_message(self):
+        from .models import Report
+        from .tasks import generate_report_task
+
+        report = Report.objects.create(requested_by=self.admin, status=Report.Status.PENDING)
+        with patch(
+            'reports_module.services.ReportService.generate_fleet_summary',
+            side_effect=ValueError('boom'),
+        ):
+            with self.assertRaises(ValueError):
+                generate_report_task.apply(args=[report.id], retries=3)
+        report.refresh_from_db()
+        self.assertEqual(report.status, Report.Status.FAILED)
+        self.assertIn('boom', report.error_message)
