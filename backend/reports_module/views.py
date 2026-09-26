@@ -1,7 +1,6 @@
 from django.http import HttpResponse
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -20,7 +19,11 @@ class FleetSummaryReportView(APIView):
     @extend_schema(
         responses={200: 'Fleet summary report', 400: 'Bad Request'},
         summary='Generate a fleet summary report',
-        description='Aggregates vehicle status, telemetry, and alert data over a date range',
+        description=(
+            'Aggregates vehicle status, telemetry, and alert data over a date range '
+            f'(computed synchronously; window capped, see ReportQuerySerializer). '
+            'For long-running or repeated reports, prefer POST /reports/generate/.'
+        ),
     )
     def get(self, request):
         serializer = ReportQuerySerializer(data=request.query_params)
@@ -81,14 +84,7 @@ class ReportDetailView(APIView):
         summary='Get report status/result',
     )
     def get(self, request, report_id):
-        try:
-            report = ReportService.get_report(request.user, report_id)
-        except PermissionDenied as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
-
-        if report is None:
-            return Response({'detail': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
-
+        report = ReportService.get_report(request.user, report_id)
         ReportService.attach_sequence_number(request.user, report)
         return Response(ReportSerializer(report).data, status=status.HTTP_200_OK)
 
@@ -102,14 +98,7 @@ class ReportDetailView(APIView):
         ),
     )
     def delete(self, request, report_id):
-        try:
-            deleted = ReportService.delete_report(request.user, report_id)
-        except PermissionDenied as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
-
-        if deleted is None:
-            return Response({'detail': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
-
+        ReportService.delete_report(request.user, report_id)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -122,13 +111,7 @@ class ReportExportView(APIView):
         summary='Export a completed report as CSV',
     )
     def get(self, request, report_id):
-        try:
-            report = ReportService.get_report(request.user, report_id)
-        except PermissionDenied as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
-
-        if report is None:
-            return Response({'detail': 'Report not found'}, status=status.HTTP_404_NOT_FOUND)
+        report = ReportService.get_report(request.user, report_id)
 
         if report.status != Report.Status.COMPLETED:
             return Response(
