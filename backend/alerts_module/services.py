@@ -2,6 +2,7 @@ import logging
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db import transaction
 from django.utils import timezone as django_timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
 
@@ -107,17 +108,27 @@ class AlertService:
 
     @staticmethod
     def acknowledge(actor, alert_id):
-        alert = AlertService.get_alert(actor, alert_id)
+        with transaction.atomic():
+            try:
+                alert = (
+                    Alert.objects.select_for_update()
+                    .select_related('vehicle', 'acknowledged_by')
+                    .get(id=alert_id)
+                )
+            except Alert.DoesNotExist:
+                raise NotFound('Alert not found')
 
-        if not alert.acknowledged:
-            alert.acknowledged = True
-            alert.acknowledged_by = actor
-            alert.acknowledged_at = django_timezone.now()
-            alert.save(update_fields=['acknowledged', 'acknowledged_by', 'acknowledged_at'])
+            AlertService._check_scope(actor, alert)
 
-            audit_logger.info(
-                'alert_acknowledged',
-                extra={'actor': actor.id, 'action': 'acknowledge_alert', 'target': alert.id},
-            )
+            if not alert.acknowledged:
+                alert.acknowledged = True
+                alert.acknowledged_by = actor
+                alert.acknowledged_at = django_timezone.now()
+                alert.save(update_fields=['acknowledged', 'acknowledged_by', 'acknowledged_at'])
+
+                audit_logger.info(
+                    'alert_acknowledged',
+                    extra={'actor': actor.id, 'action': 'acknowledge_alert', 'target': alert.id},
+                )
 
         return alert
