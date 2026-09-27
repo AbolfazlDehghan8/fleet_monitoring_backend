@@ -35,5 +35,6 @@ export interface TelemetryIngestRequest {
 }
 
 export interface TelemetryIngestResponse {
+  status: 'accepted';
   dispatch_id: string;
 }
