@@ -201,6 +201,7 @@ class VehicleService:
         previous_manager_id = vehicle.assigned_manager_id
 
         data = dict(data)
+        obu_serial_provided = 'obu_serial_number' in data
         obu_serial = data.pop('obu_serial_number', None)
         obu_firmware = data.pop('obu_firmware_version', None)
 
@@ -218,7 +219,10 @@ class VehicleService:
                 vehicle.save()
 
                 obu = getattr(vehicle, 'obu', None)
-                if obu is not None or obu_serial:
+                if obu_serial_provided and obu_serial is None:
+                    if obu is not None:
+                        obu.delete()
+                elif obu is not None or obu_serial:
                     if obu is None:
                         obu = OBU(vehicle=vehicle, serial_number=obu_serial, firmware_version=obu_firmware or '')
                     if obu_serial:
