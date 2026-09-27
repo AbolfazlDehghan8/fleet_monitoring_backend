@@ -362,7 +362,7 @@ class DriverService:
 
     @staticmethod
     def list_assignable(user):
-        queryset = Driver.objects.select_related('user')
+        queryset = Driver.objects.select_related('user').filter(is_active=True)
         if user.is_fleet_manager:
             queryset = queryset.filter(
                 models.Q(vehicles__assigned_manager=user) | models.Q(vehicles__isnull=True)
