@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Alert
+from .models import Alert, AlertDismissal
 
 
 @admin.register(Alert)
@@ -13,3 +13,9 @@ class AlertAdmin(admin.ModelAdmin):
 
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(AlertDismissal)
+class AlertDismissalAdmin(admin.ModelAdmin):
+    list_display = ('alert', 'user', 'created_at')
+    raw_id_fields = ('alert', 'user')
