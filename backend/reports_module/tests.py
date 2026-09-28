@@ -14,7 +14,9 @@ from rules_module.models import Rule
 from telemetry_module.models import TelemetryLog
 from vehicles_module.models import Company, Vehicle
 
+from .models import Report
 from .services import ReportService
+from .tasks import generate_report_task, generate_scheduled_fleet_report
 
 
 LOCMEM_CACHE = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
@@ -190,17 +192,12 @@ class AsyncReportGenerationTests(ReportsTestBase):
         self.assertIn(b'vehicle_count', export.content)
 
     def test_export_rejected_when_report_not_yet_completed(self):
-        from .models import Report
-
         report = Report.objects.create(requested_by=self.admin, status=Report.Status.PENDING)
         self._auth_as('admin')
         export = self.client.get(reverse('report-export', args=[report.id]))
         self.assertEqual(export.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_scheduled_report_task_creates_system_wide_report(self):
-        from .models import Report
-        from .tasks import generate_scheduled_fleet_report
-
         generate_scheduled_fleet_report()
         report = Report.objects.latest('created_at')
         self.assertIsNone(report.requested_by)
@@ -208,9 +205,6 @@ class AsyncReportGenerationTests(ReportsTestBase):
         self.assertEqual(report.result['vehicle_count'], 2)
 
     def test_scheduled_report_result_shape_matches_user_generated_report(self):
-        from .models import Report
-        from .tasks import generate_scheduled_fleet_report
-
         generate_scheduled_fleet_report()
         report = Report.objects.latest('created_at')
 
@@ -326,8 +320,6 @@ class ReportRequesterVisibilityTests(ReportsTestBase):
         self.assertEqual(detail.data['requested_by_role'], 'fleet_manager')
 
     def test_system_wide_scheduled_report_has_no_requester(self):
-        from .tasks import generate_scheduled_fleet_report
-
         generate_scheduled_fleet_report()
 
         self._auth_as('admin')
@@ -416,9 +408,6 @@ class ReportAggregationCorrectnessTests(ReportsTestBase):
 
 class ReportTaskFailureHandlingTests(ReportsTestBase):
     def test_deleted_report_is_not_retried(self):
-        from .models import Report
-        from .tasks import generate_report_task
-
         report = Report.objects.create(requested_by=self.admin, status=Report.Status.PENDING)
         report_id = report.id
         report.delete()
@@ -428,9 +417,6 @@ class ReportTaskFailureHandlingTests(ReportsTestBase):
         self.assertTrue(any('report_run_skipped_not_found' in line for line in captured.output))
 
     def test_permanent_failure_marks_report_failed_and_stores_message(self):
-        from .models import Report
-        from .tasks import generate_report_task
-
         report = Report.objects.create(requested_by=self.admin, status=Report.Status.PENDING)
         with patch(
             'reports_module.services.ReportService.generate_fleet_summary',

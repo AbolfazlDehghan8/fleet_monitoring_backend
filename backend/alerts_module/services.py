@@ -7,6 +7,7 @@ from django.utils import timezone as django_timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
 
 from .models import Alert
+from .tasks import dispatch_alert_notification
 
 audit_logger = logging.getLogger('audit')
 degradation_logger = logging.getLogger('fleet_monitoring.cache_degradation')
@@ -54,7 +55,6 @@ class AlertService:
             extra={'actor': 'alert_engine', 'action': 'create_alert', 'target': violation['vehicle_id']},
         )
 
-        from .tasks import dispatch_alert_notification
         dispatch_alert_notification.apply_async(args=[alert.id], queue='alerts.trigger.notify')
 
         return alert

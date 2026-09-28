@@ -11,6 +11,8 @@ from django.db import IntegrityError, transaction
 from rest_framework.exceptions import AuthenticationFailed, NotFound, PermissionDenied, Throttled
 from rest_framework.exceptions import ValidationError as DRFValidationError
 
+from vehicles_module.models import Driver, Vehicle
+
 from . import tokens
 from .models import RefreshToken, User
 
@@ -330,8 +332,6 @@ class UserService:
 
     @staticmethod
     def _sync_role_side_effects(user, previous_role, new_role, new_active):
-        from vehicles_module.models import Driver, Vehicle
-
         stops_being_driver = previous_role == User.Role.DRIVER and (
             new_role != User.Role.DRIVER or not new_active
         )

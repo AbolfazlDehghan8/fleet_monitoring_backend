@@ -9,7 +9,9 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.exceptions import APIException, PermissionDenied
 
+from fleet_monitoring.middleware import get_correlation_id
 from fleet_monitoring.tracing import trace_span
+from rules_module.services import RuleService
 from vehicles_module.models import Vehicle
 from vehicles_module.services import VehicleService
 
@@ -73,8 +75,6 @@ class TelemetryService:
             raise ValidationError({'vehicle_id': 'Vehicle is decommissioned and no longer accepts telemetry'})
         if target['obu_serial'] and target['obu_serial'] != validated_data['obu_serial']:
             raise ValidationError({'obu_serial': 'OBU serial does not match the OBU registered for this vehicle'})
-
-        from fleet_monitoring.middleware import get_correlation_id
 
         from .tasks import process_telemetry_packet
 
@@ -179,7 +179,6 @@ class TelemetryService:
 
     @staticmethod
     def _evaluate_rules(log, vehicle_public_id):
-        from rules_module.services import RuleService
         try:
             RuleService.evaluate(log, vehicle_public_id=vehicle_public_id)
         except Exception:

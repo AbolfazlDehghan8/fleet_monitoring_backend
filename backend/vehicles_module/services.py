@@ -7,6 +7,7 @@ from django.db import IntegrityError, models, transaction
 from django.utils import timezone as django_timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
 
+from alerts_module.models import Alert
 from auth_module.models import User
 from fleet_monitoring.error_utils import integrity_error_to_validation
 
@@ -309,7 +310,6 @@ class VehicleService:
 
         queryset = Vehicle.objects.all() if user.is_admin else Vehicle.objects.filter(assigned_manager=user)
 
-        from alerts_module.models import Alert
         alerts_qs = Alert.objects.filter(acknowledged=False)
         if not user.is_admin:
             alerts_qs = alerts_qs.filter(vehicle__assigned_manager=user)

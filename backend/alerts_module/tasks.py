@@ -5,7 +5,10 @@ from django.conf import settings
 from django.core.mail import send_mail
 from django.db import InterfaceError, OperationalError
 
+from auth_module.models import User
 from fleet_monitoring.dead_letter import publish_to_dead_letter
+
+from .models import Alert
 
 logger = logging.getLogger('audit')
 
@@ -22,10 +25,6 @@ TRANSIENT_ERRORS = (OperationalError, InterfaceError, ConnectionError, TimeoutEr
     ignore_result=True,
 )
 def dispatch_alert_notification(self, alert_id):
-    from auth_module.models import User
-
-    from .models import Alert
-
     try:
         alert = Alert.objects.select_related('vehicle', 'vehicle__assigned_manager').get(id=alert_id)
     except Alert.DoesNotExist:

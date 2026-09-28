@@ -159,7 +159,6 @@ class RuleEvaluationTests(RulesTestBase):
             severity='low', created_by=self.admin,
         )
 
-        from telemetry_module.models import TelemetryLog
         log = TelemetryLog.objects.create(
             vehicle=self.vehicle, obu_serial='OBU-2026-0001', timestamp='2025-07-11T14:32:01.234Z',
             speed=60, engine_temperature=115, battery_voltage=12.5, fuel_level=50,
@@ -177,7 +176,6 @@ class RuleEvaluationTests(RulesTestBase):
             is_active=False, created_by=self.admin,
         )
 
-        from telemetry_module.models import TelemetryLog
         log = TelemetryLog.objects.create(
             vehicle=self.vehicle, obu_serial='OBU-2026-0001', timestamp='2025-07-11T14:32:01.234Z',
             speed=60, engine_temperature=200, battery_voltage=12.5, fuel_level=50,
@@ -193,7 +191,6 @@ class RuleEvaluationTests(RulesTestBase):
             severity='high', created_by=self.admin,
         )
 
-        from telemetry_module.models import TelemetryLog
         log = TelemetryLog.objects.create(
             vehicle=self.vehicle, obu_serial='OBU-2026-0001', timestamp='2025-07-11T14:32:01.234Z',
             speed=60, engine_temperature=115, battery_voltage=12.5, fuel_level=50,
@@ -211,7 +208,6 @@ class RuleEvaluationTests(RulesTestBase):
             severity='high', created_by=self.admin,
         )
 
-        from telemetry_module.models import TelemetryLog
         log = TelemetryLog.objects.create(
             vehicle=self.vehicle, obu_serial='OBU-2026-0001', timestamp='2025-07-11T14:32:01.234Z',
             speed=60, engine_temperature=115, battery_voltage=12.5, fuel_level=50,

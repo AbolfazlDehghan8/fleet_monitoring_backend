@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+from django.core import mail
 from django.core.cache import cache
 from django.db import OperationalError, connection
 from django.test import override_settings
@@ -320,8 +321,6 @@ class AlertMeAcknowledgeTests(AlertsTestBase):
 class AlertNotificationTests(AlertsTestBase):
 
     def test_notification_email_sent_to_assigned_manager_and_admins(self):
-        from django.core import mail
-
         mail.outbox = []
         dispatch_alert_notification.apply(args=[self.alert.id])
 
@@ -332,8 +331,6 @@ class AlertNotificationTests(AlertsTestBase):
         self.assertIn('veh_alert_1', sent.subject)
 
     def test_notification_skipped_gracefully_when_no_recipients(self):
-        from django.core import mail
-
         User.objects.filter(role='admin').update(is_active=False)
         unassigned_vehicle = Vehicle.objects.create(
             vehicle_id='veh_alert_unassigned', license_plate='12ب33333', company=self.company
@@ -347,8 +344,6 @@ class AlertNotificationTests(AlertsTestBase):
         self.assertEqual(len(mail.outbox), 0)
 
     def test_notification_skipped_gracefully_when_alert_was_deleted(self):
-        from django.core import mail
-
         mail.outbox = []
         with self.assertLogs('audit', level='WARNING'):
             dispatch_alert_notification.apply(args=[999999])

@@ -6,6 +6,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from rest_framework.exceptions import NotFound
 
+from alerts_module.services import AlertService
 from fleet_monitoring.dead_letter import publish_to_dead_letter
 from fleet_monitoring.tracing import trace_span
 
@@ -134,7 +135,6 @@ class RuleService:
             },
         )
 
-        from alerts_module.services import AlertService
         for violation in violations:
             try:
                 AlertService.create_from_violation(violation)

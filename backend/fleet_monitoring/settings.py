@@ -1,4 +1,5 @@
 import os
+import warnings
 from pathlib import Path
 
 from celery.schedules import crontab
@@ -143,7 +144,6 @@ AUTH_LOCKOUT_SECONDS = env_int('AUTH_LOCKOUT_SECONDS', 900)
 ALLOW_SELF_REGISTRATION = env_bool('ALLOW_SELF_REGISTRATION', True)
 
 if not DEBUG and JWT_SIGNING_KEY == SECRET_KEY:
-    import warnings
     warnings.warn('JWT_SIGNING_KEY is not set: JWTs are signed with SECRET_KEY. Use a separate key in production.')
 if len(JWT_SIGNING_KEY) < 32 and not DEBUG:
     raise ImproperlyConfigured('JWT_SIGNING_KEY must be at least 32 characters when DEBUG is False.')
@@ -175,7 +175,6 @@ CORS_ALLOWED_ORIGINS = env_list(
 ENABLE_HTTPS_ENFORCEMENT = env_bool('ENABLE_HTTPS_ENFORCEMENT', False)
 
 if not DEBUG and not ENABLE_HTTPS_ENFORCEMENT:
-    import warnings
     warnings.warn('DEBUG is False but ENABLE_HTTPS_ENFORCEMENT is off: NFR-SEC10 requires HTTPS in production.')
 
 SECURE_CONTENT_TYPE_NOSNIFF = True
