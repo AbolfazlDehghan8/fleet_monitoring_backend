@@ -307,6 +307,11 @@ const en = {
   'alerts.noMatchDesc': 'Try clearing filters, or your fleet may simply be running clean.',
   'alerts.alertAcknowledged': 'Alert acknowledged',
   'alerts.failedToAcknowledge': 'Failed to acknowledge alert',
+  'alerts.delete': 'Delete',
+  'alerts.deleteTitle': 'Delete this alert?',
+  'alerts.deleteDesc': 'The alert will be removed from your list. Other users who have access to it will still see it.',
+  'alerts.alertDeleted': 'Alert deleted',
+  'alerts.failedToDelete': 'Failed to delete alert',
 
   // My Alerts (driver)
   'myAlerts.title': 'My Alerts',
@@ -901,6 +906,11 @@ const fa: Record<keyof typeof en, string> = {
   'alerts.noMatchDesc': 'فیلترها را پاک کنید یا شاید ناوگان شما وضعیت مطلوبی دارد.',
   'alerts.alertAcknowledged': 'هشدار تأیید شد',
   'alerts.failedToAcknowledge': 'تأیید هشدار ناموفق بود',
+  'alerts.delete': 'حذف',
+  'alerts.deleteTitle': 'این هشدار حذف شود؟',
+  'alerts.deleteDesc': 'هشدار از فهرست شما حذف می‌شود. سایر کاربرانی که به آن دسترسی دارند همچنان آن را می‌بینند.',
+  'alerts.alertDeleted': 'هشدار حذف شد',
+  'alerts.failedToDelete': 'حذف هشدار ناموفق بود',
 
   // هشدارهای من (راننده)
   'myAlerts.title': 'هشدارهای من',

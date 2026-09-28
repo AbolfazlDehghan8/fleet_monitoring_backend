@@ -12,6 +12,9 @@ export const alertsApi = {
   acknowledge: (alertId: number) =>
     apiClient.post<Alert>(`/alerts/${alertId}/acknowledge/`).then((r) => r.data),
 
+  /** Removes the alert from the caller's own lists only; other users still see it. */
+  remove: (alertId: number) => apiClient.delete(`/alerts/${alertId}/`).then(() => undefined),
+
   /** Driver-role only. */
   listMine: () => apiClient.get<ApiList<Alert>>('/alerts/me/').then((r) => r.data),
 

@@ -1,9 +1,10 @@
-import type * as React from 'react';
+import * as React from 'react';
 
-import { ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { Link, useParams } from 'react-router-dom';
+import { ArrowLeft, CheckCircle2, Trash2 } from 'lucide-react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { useLanguage } from '@/app/LanguageContext';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { SeverityBadge } from '@/components/shared/SeverityBadge';
@@ -12,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/use-toast';
-import { useAcknowledgeAlert, useAlert } from '@/features/alerts/hooks';
+import { useAcknowledgeAlert, useAlert, useDeleteAlert } from '@/features/alerts/hooks';
 import { formatDateTime } from '@/utils/formatters';
 import { ApiError } from '@/types/common';
 import { getApiErrorMessage } from '@/i18n/apiErrors';
@@ -37,6 +38,9 @@ export function AlertDetailPage({
 
   const alertQuery = useAlert(alertId);
   const acknowledgeMutation = useAcknowledgeAlert();
+  const deleteMutation = useDeleteAlert();
+  const navigate = useNavigate();
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
 
   async function handleAcknowledge() {
     try {
@@ -45,6 +49,20 @@ export function AlertDetailPage({
     } catch (error) {
       toast({
         title: t('alerts.failedToAcknowledge'),
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
+        variant: 'destructive',
+      });
+    }
+  }
+
+  async function handleDelete() {
+    try {
+      await deleteMutation.mutateAsync(alertId);
+      toast({ title: t('alerts.alertDeleted'), variant: 'success' });
+      navigate(backTo, { replace: true });
+    } catch (error) {
+      toast({
+        title: t('alerts.failedToDelete'),
         description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
@@ -82,18 +100,24 @@ export function AlertDetailPage({
             time: formatDateTime(alert.created_at),
           })}
           actions={
-            !alert.acknowledged ? (
-              <Button onClick={() => void handleAcknowledge()} disabled={acknowledgeMutation.isPending}>
-                <CheckCircle2 className="size-4" />
-                {acknowledgeMutation.isPending
-                  ? t('alertDetail.acknowledging')
-                  : t('alertDetail.acknowledgeAlert')}
+            <div className="flex items-center gap-2">
+              {!alert.acknowledged ? (
+                <Button onClick={() => void handleAcknowledge()} disabled={acknowledgeMutation.isPending}>
+                  <CheckCircle2 className="size-4" />
+                  {acknowledgeMutation.isPending
+                    ? t('alertDetail.acknowledging')
+                    : t('alertDetail.acknowledgeAlert')}
+                </Button>
+              ) : (
+                <Badge variant="success" className="text-sm">
+                  {t('alerts.acknowledged')}
+                </Badge>
+              )}
+              <Button variant="outline" onClick={() => setConfirmDeleteOpen(true)}>
+                <Trash2 className="size-4" />
+                {t('alerts.delete')}
               </Button>
-            ) : (
-              <Badge variant="success" className="text-sm">
-                {t('alerts.acknowledged')}
-              </Badge>
-            )
+            </div>
           }
         />
       </div>
@@ -141,6 +165,17 @@ export function AlertDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title={t('alerts.deleteTitle')}
+        description={t('alerts.deleteDesc')}
+        confirmLabel={t('common.delete')}
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => void handleDelete()}
+      />
     </div>
   );
 }

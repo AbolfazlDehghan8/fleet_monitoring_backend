@@ -1,8 +1,9 @@
 import * as React from 'react';
-import { CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { useLanguage } from '@/app/LanguageContext';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { DataTable, type DataTableColumn } from '@/components/shared/DataTable';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { FilterBar } from '@/components/shared/FilterBar';
@@ -12,7 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui/use-toast';
 import { SEVERITIES, type Severity } from '@/constants/statuses';
-import { useAcknowledgeAlert, useAlerts } from '@/features/alerts/hooks';
+import { useAcknowledgeAlert, useAlerts, useDeleteAlert } from '@/features/alerts/hooks';
 import { formatDateTime } from '@/utils/formatters';
 import { ApiError } from '@/types/common';
 import { getApiErrorMessage } from '@/i18n/apiErrors';
@@ -23,6 +24,8 @@ export function AlertsListPage() {
   const navigate = useNavigate();
   const alertsQuery = useAlerts();
   const acknowledgeMutation = useAcknowledgeAlert();
+  const deleteMutation = useDeleteAlert();
+  const [alertToDelete, setAlertToDelete] = React.useState<Alert | null>(null);
 
   const [search, setSearch] = React.useState('');
   const [severityFilter, setSeverityFilter] = React.useState('');
@@ -50,6 +53,21 @@ export function AlertsListPage() {
     } catch (error) {
       toast({
         title: t('alerts.failedToAcknowledge'),
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
+        variant: 'destructive',
+      });
+    }
+  }
+
+  async function handleDelete() {
+    if (!alertToDelete) return;
+    try {
+      await deleteMutation.mutateAsync(alertToDelete.id);
+      toast({ title: t('alerts.alertDeleted'), variant: 'success' });
+      setAlertToDelete(null);
+    } catch (error) {
+      toast({
+        title: t('alerts.failedToDelete'),
         description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
         variant: 'destructive',
       });
@@ -102,18 +120,34 @@ export function AlertsListPage() {
     {
       id: 'actions',
       header: '',
-      cell: (row) =>
-        !row.acknowledged ? (
+      cell: (row) => (
+        <div className="flex items-center justify-end gap-2">
+          {!row.acknowledged && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={(e) => void handleAcknowledge(row, e)}
+              disabled={acknowledgeMutation.isPending}
+            >
+              <CheckCircle2 className="size-3.5" />
+              {t('alerts.acknowledge')}
+            </Button>
+          )}
           <Button
-            size="sm"
-            variant="outline"
-            onClick={(e) => void handleAcknowledge(row, e)}
-            disabled={acknowledgeMutation.isPending}
+            size="icon"
+            variant="ghost"
+            className="size-8 text-muted-foreground hover:text-destructive"
+            aria-label={t('alerts.delete')}
+            title={t('alerts.delete')}
+            onClick={(e) => {
+              e.stopPropagation();
+              setAlertToDelete(row);
+            }}
           >
-            <CheckCircle2 className="size-3.5" />
-            {t('alerts.acknowledge')}
+            <Trash2 className="size-4" />
           </Button>
-        ) : null,
+        </div>
+      ),
       className: 'text-end',
     },
   ];
@@ -166,6 +200,19 @@ export function AlertsListPage() {
           emptyDescription={t('alerts.noMatchDesc')}
         />
       )}
+
+      <ConfirmDialog
+        open={alertToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setAlertToDelete(null);
+        }}
+        title={t('alerts.deleteTitle')}
+        description={t('alerts.deleteDesc')}
+        confirmLabel={t('common.delete')}
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => void handleDelete()}
+      />
     </div>
   );
 }

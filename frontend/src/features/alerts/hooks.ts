@@ -35,6 +35,7 @@ export function useAcknowledgeAlert() {
     mutationFn: (alertId: number) => alertsApi.acknowledge(alertId),
     onSuccess: (_data, alertId) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.alerts.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.alerts.mine });
       void queryClient.invalidateQueries({ queryKey: queryKeys.alerts.detail(alertId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats });
     },
@@ -45,7 +46,20 @@ export function useAcknowledgeMyAlert() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (alertId: number) => alertsApi.acknowledgeMine(alertId),
-    onSuccess: () => {
+    onSuccess: (_data, alertId) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.alerts.mine });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.alerts.detail(alertId) });
+    },
+  });
+}
+
+export function useDeleteAlert() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (alertId: number) => alertsApi.remove(alertId),
+    onSuccess: (_data, alertId) => {
+      queryClient.removeQueries({ queryKey: queryKeys.alerts.detail(alertId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.alerts.all });
       void queryClient.invalidateQueries({ queryKey: queryKeys.alerts.mine });
     },
   });
