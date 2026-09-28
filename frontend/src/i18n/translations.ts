@@ -908,7 +908,7 @@ const fa: Record<keyof typeof en, string> = {
   'alerts.failedToAcknowledge': 'تأیید هشدار ناموفق بود',
   'alerts.delete': 'حذف',
   'alerts.deleteTitle': 'این هشدار حذف شود؟',
-  'alerts.deleteDesc': 'هشدار از فهرست شما حذف می‌شود. سایر کاربرانی که به آن دسترسی دارند همچنان آن را می‌بینند.',
+  'alerts.deleteDesc': 'هشدار از فهرست شما حذف می‌شود.',
   'alerts.alertDeleted': 'هشدار حذف شد',
   'alerts.failedToDelete': 'حذف هشدار ناموفق بود',
 
