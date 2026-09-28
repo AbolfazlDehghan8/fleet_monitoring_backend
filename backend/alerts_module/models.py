@@ -36,3 +36,16 @@ class Alert(models.Model):
 
     def __str__(self):
         return f"{self.rule_name} on {self.vehicle.vehicle_id} @ {self.created_at.isoformat()}"
+
+
+class AlertDismissal(models.Model):
+    alert = models.ForeignKey(Alert, on_delete=models.CASCADE, related_name='dismissals')
+    user = models.ForeignKey('auth_module.User', on_delete=models.CASCADE, related_name='dismissed_alerts')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'alert_dismissals'
+        constraints = [
+            models.UniqueConstraint(fields=['alert', 'user'], name='alert_dismissal_unique_alert_user'),
+        ]
+        indexes = [models.Index(fields=['user'], name='alert_dismissal_user_idx')]
