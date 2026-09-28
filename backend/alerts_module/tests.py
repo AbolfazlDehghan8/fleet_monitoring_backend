@@ -367,3 +367,41 @@ class AlertNotificationTests(AlertsTestBase):
             with self.assertRaises(Exception):
                 dispatch_alert_notification.apply(args=[self.alert.id], retries=0)
         dlq.assert_not_called()
+
+
+class AlertDismissTests(AlertsTestBase):
+    def _delete(self, username, alert=None):
+        self._auth_as(username)
+        return self.client.delete(reverse('alert-detail', args=[(alert or self.alert).id]))
+
+    def _ids(self, url_name):
+        return [a['id'] for a in self.client.get(reverse(url_name)).data]
+
+    def test_admin_dismiss_hides_from_own_list_only(self):
+        self.assertEqual(self._delete('admin').status_code, status.HTTP_204_NO_CONTENT)
+        self.assertNotIn(self.alert.id, self._ids('alert-list'))
+        self._auth_as('manager')
+        self.assertIn(self.alert.id, self._ids('alert-list'))
+        self.assertTrue(Alert.objects.filter(id=self.alert.id).exists())
+
+    def test_manager_can_dismiss_assigned_alert(self):
+        self.assertEqual(self._delete('manager').status_code, status.HTTP_204_NO_CONTENT)
+        self.assertNotIn(self.alert.id, self._ids('alert-list'))
+
+    def test_driver_can_dismiss_own_alert(self):
+        self.assertEqual(self._delete('driveruser').status_code, status.HTTP_204_NO_CONTENT)
+        self.assertNotIn(self.alert.id, self._ids('alert-me'))
+        self._auth_as('manager')
+        self.assertIn(self.alert.id, self._ids('alert-list'))
+
+    def test_other_manager_cannot_dismiss(self):
+        self.assertEqual(self._delete('manager2').status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_dismiss_is_idempotent(self):
+        self._delete('admin')
+        self.assertEqual(self._delete('admin').status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_missing_alert_is_404(self):
+        self._auth_as('admin')
+        response = self.client.delete(reverse('alert-detail', args=[999999]))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
