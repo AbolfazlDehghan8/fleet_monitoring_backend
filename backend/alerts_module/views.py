@@ -43,6 +43,18 @@ class AlertDetailView(APIView):
         alert = AlertService.get_alert(request.user, alert_id)
         return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
 
+    @extend_schema(
+        responses={204: None, 403: 'Forbidden', 404: 'Not Found'},
+        summary='Remove an alert from my list',
+        description=(
+            'Hides the alert from the caller\'s own lists only; the alert is kept and remains '
+            'visible to other users. Idempotent.'
+        ),
+    )
+    def delete(self, request, alert_id):
+        AlertService.dismiss(request.user, alert_id)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class AlertAcknowledgeView(APIView):
 
