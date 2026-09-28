@@ -6,7 +6,7 @@ from django.db import transaction
 from django.utils import timezone as django_timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
 
-from .models import Alert
+from .models import Alert, AlertDismissal
 from .tasks import dispatch_alert_notification
 
 audit_logger = logging.getLogger('audit')
@@ -85,7 +85,10 @@ class AlertService:
             queryset = Alert.objects.filter(vehicle__assigned_manager=user)
         else:
             queryset = Alert.objects.none()
-        return queryset.select_related('vehicle', 'acknowledged_by')[:500]
+        return (
+            queryset.exclude(dismissals__user=user)
+            .select_related('vehicle', 'acknowledged_by')[:500]
+        )
 
     @staticmethod
     def list_alerts_for_driver(user):
@@ -94,6 +97,7 @@ class AlertService:
             return Alert.objects.none()
         return (
             Alert.objects.filter(vehicle__driver=driver_profile)
+            .exclude(dismissals__user=user)
             .select_related('vehicle', 'acknowledged_by')[:500]
         )
 
@@ -111,7 +115,7 @@ class AlertService:
         with transaction.atomic():
             try:
                 alert = (
-                    Alert.objects.select_for_update()
+                    Alert.objects.select_for_update(of=('self',))
                     .select_related('vehicle', 'acknowledged_by')
                     .get(id=alert_id)
                 )
@@ -132,3 +136,13 @@ class AlertService:
                 )
 
         return alert
+
+    @staticmethod
+    def dismiss(actor, alert_id):
+        alert = AlertService.get_alert(actor, alert_id)
+        _, created = AlertDismissal.objects.get_or_create(alert=alert, user=actor)
+        if created:
+            audit_logger.info(
+                'alert_dismissed',
+                extra={'actor': actor.id, 'action': 'dismiss_alert', 'target': alert.id},
+            )
