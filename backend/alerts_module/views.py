@@ -21,7 +21,7 @@ class AlertListView(APIView):
     )
     def get(self, request):
         alerts = AlertService.list_alerts(request.user)
-        return Response(AlertSerializer(alerts, many=True).data, status=status.HTTP_200_OK)
+        return Response(AlertSerializer(alerts, many=True, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
 class AlertMeView(APIView):
@@ -31,7 +31,7 @@ class AlertMeView(APIView):
     @extend_schema(responses={200: AlertSerializer(many=True)}, summary="Get the driver's own vehicle alerts")
     def get(self, request):
         alerts = AlertService.list_alerts_for_driver(request.user)
-        return Response(AlertSerializer(alerts, many=True).data, status=status.HTTP_200_OK)
+        return Response(AlertSerializer(alerts, many=True, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
 class AlertDetailView(APIView):
@@ -41,7 +41,7 @@ class AlertDetailView(APIView):
     @extend_schema(responses={200: AlertSerializer, 403: 'Forbidden', 404: 'Not Found'}, summary='Retrieve an alert')
     def get(self, request, alert_id):
         alert = AlertService.get_alert(request.user, alert_id)
-        return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
+        return Response(AlertSerializer(alert, context={'request': request}).data, status=status.HTTP_200_OK)
 
     @extend_schema(
         responses={204: None, 403: 'Forbidden', 404: 'Not Found'},
@@ -63,11 +63,14 @@ class AlertAcknowledgeView(APIView):
     @extend_schema(
         responses={200: AlertSerializer, 403: 'Forbidden', 404: 'Not Found'},
         summary='Acknowledge an alert',
-        description='Idempotent: acknowledging an already-acknowledged alert is a no-op that still returns 200',
+        description=(
+            'Acknowledges the alert for the caller only; other users and roles still see it as open. '
+            'Idempotent: re-acknowledging is a no-op that still returns 200'
+        ),
     )
     def post(self, request, alert_id):
         alert = AlertService.acknowledge(request.user, alert_id)
-        return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
+        return Response(AlertSerializer(alert, context={'request': request}).data, status=status.HTTP_200_OK)
 
 
 class AlertMeAcknowledgeView(APIView):
@@ -83,4 +86,4 @@ class AlertMeAcknowledgeView(APIView):
         serializer = AcknowledgeOwnAlertSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         alert = AlertService.acknowledge(request.user, serializer.validated_data['alert_id'])
-        return Response(AlertSerializer(alert).data, status=status.HTTP_200_OK)
+        return Response(AlertSerializer(alert, context={'request': request}).data, status=status.HTTP_200_OK)
