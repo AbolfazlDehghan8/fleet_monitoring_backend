@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
+from alerts_module.models import Alert, AlertAcknowledgment
 from auth_module.models import User
 from fleet_monitoring.error_utils import integrity_error_to_validation
 from telemetry_module.models import TelemetryLog
@@ -435,6 +436,17 @@ class DashboardStatsTests(VehicleTestBase):
         self.assertEqual(response.data['total_vehicles'], 2)
         self.assertIn('vehicles_by_status', response.data)
         self.assertIn('unacknowledged_alerts', response.data)
+
+    def test_open_alert_count_is_personal_to_each_user(self):
+        alert = Alert.objects.create(
+            vehicle=self.vehicle, rule_name='r', metric='speed', threshold=1, value=2, severity='high',
+        )
+        AlertAcknowledgment.objects.create(alert=alert, user=self.manager)
+
+        self._login_as('admin01')
+        self.assertEqual(self.client.get(reverse('vehicle-dashboard-stats')).data['unacknowledged_alerts'], 1)
+        self._login_as('fm01')
+        self.assertEqual(self.client.get(reverse('vehicle-dashboard-stats')).data['unacknowledged_alerts'], 0)
 
     def test_fleet_manager_sees_only_their_vehicles(self):
         self._login_as('fm01')
