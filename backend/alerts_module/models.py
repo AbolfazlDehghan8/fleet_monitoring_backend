@@ -18,19 +18,12 @@ class Alert(models.Model):
     value = models.FloatField()
     severity = models.CharField(max_length=10, choices=RULE_SEVERITY_CHOICES)
 
-    acknowledged = models.BooleanField(default=False)
-    acknowledged_by = models.ForeignKey(
-        'auth_module.User', on_delete=models.SET_NULL, null=True, blank=True, related_name='acknowledged_alerts',
-    )
-    acknowledged_at = models.DateTimeField(null=True, blank=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = 'alerts'
         indexes = [
             models.Index(fields=['vehicle', '-created_at']),
-            models.Index(fields=['acknowledged']),
         ]
         ordering = ['-created_at']
 
@@ -49,3 +42,16 @@ class AlertDismissal(models.Model):
             models.UniqueConstraint(fields=['alert', 'user'], name='alert_dismissal_unique_alert_user'),
         ]
         indexes = [models.Index(fields=['user'], name='alert_dismissal_user_idx')]
+
+
+class AlertAcknowledgment(models.Model):
+    alert = models.ForeignKey(Alert, on_delete=models.CASCADE, related_name='acknowledgments')
+    user = models.ForeignKey('auth_module.User', on_delete=models.CASCADE, related_name='alert_acknowledgments')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'alert_acknowledgments'
+        constraints = [
+            models.UniqueConstraint(fields=['alert', 'user'], name='alert_ack_unique_alert_user'),
+        ]
+        indexes = [models.Index(fields=['user'], name='alert_ack_user_idx')]
