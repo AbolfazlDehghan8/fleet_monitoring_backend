@@ -9,6 +9,7 @@ export const alertsApi = {
 
   get: (alertId: number) => apiClient.get<Alert>(`/alerts/${alertId}/`).then((r) => r.data),
 
+  /** Acknowledges for the caller only; other users/roles still see the alert as open. */
   acknowledge: (alertId: number) =>
     apiClient.post<Alert>(`/alerts/${alertId}/acknowledge/`).then((r) => r.data),
 

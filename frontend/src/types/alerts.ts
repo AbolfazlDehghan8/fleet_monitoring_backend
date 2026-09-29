@@ -1,6 +1,9 @@
 import type { Severity } from '@/constants/statuses';
 
-/** Matches `alerts_module.serializers.AlertSerializer`. All fields are read-only. */
+/**
+ * Matches `alerts_module.serializers.AlertSerializer`. All fields are read-only.
+ * `acknowledged*` describe the *current user's* own acknowledgment only (per-user, not shared across roles).
+ */
 export interface Alert {
   id: number;
   vehicle_id: string;

@@ -14,6 +14,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/use-toast';
 import { ROLES } from '@/constants/roles';
 import { VEHICLE_STATUSES } from '@/constants/statuses';
@@ -125,8 +126,12 @@ export function VehicleFormPage() {
   // Only admins can reassign a vehicle's manager, and only admins can query
   // the fleet-manager roster (see auth_module.permissions.IsAdmin).
   const [managers, setManagers] = React.useState<{ id: number; label: string }[]>([]);
+  const [managersLoading, setManagersLoading] = React.useState(isAdmin);
   React.useEffect(() => {
-    if (!isAdmin) return;
+    if (!isAdmin) {
+      setManagersLoading(false);
+      return;
+    }
     let cancelled = false;
     adminUsersApi
       .list({ role: ROLES.FLEET_MANAGER })
@@ -136,7 +141,10 @@ export function VehicleFormPage() {
         }
       })
       .catch(() => {
-        /* non-fatal: the field just stays empty */
+        /* non-fatal: the current manager is still shown from the vehicle itself */
+      })
+      .finally(() => {
+        if (!cancelled) setManagersLoading(false);
       });
     return () => {
       cancelled = true;
@@ -186,6 +194,37 @@ export function VehicleFormPage() {
       obu_firmware_version: '',
     },
   });
+
+  // The dropdown options must already contain the vehicle's *current* driver and
+  // manager by the time the saved values are applied to the form. Otherwise the
+  // Select has a value with no matching option (the option lists load
+  // asynchronously, and the assignable/manager lists may not even include the
+  // current one), and it shows "Unassigned" / resets the value to empty, which
+  // forces the user to pick them again. So the current ones are always injected.
+  const currentVehicle = vehicleQuery.data;
+  const driverOptions = React.useMemo(() => {
+    const options = (driversQuery.data ?? []).map((d) => ({
+      value: String(d.id),
+      label: `${d.full_name} · ${d.license_number}`,
+    }));
+    const current = currentVehicle?.driver;
+    if (current?.is_active && !options.some((o) => o.value === String(current.id))) {
+      options.unshift({ value: String(current.id), label: `${current.full_name} · ${current.license_number}` });
+    }
+    return options;
+  }, [driversQuery.data, currentVehicle?.driver]);
+
+  const managerOptions = React.useMemo(() => {
+    const options = managers.map((m) => ({ value: String(m.id), label: m.label }));
+    const currentId = currentVehicle?.assigned_manager;
+    if (currentId && !options.some((o) => o.value === String(currentId))) {
+      options.unshift({
+        value: String(currentId),
+        label: currentVehicle?.assigned_manager_username ?? String(currentId),
+      });
+    }
+    return options;
+  }, [managers, currentVehicle?.assigned_manager, currentVehicle?.assigned_manager_username]);
 
   if (isEditing && vehicleQuery.isLoading) {
     return <p className="text-sm text-muted-foreground">{t('vehicleForm.loadingVehicle')}</p>;
@@ -377,35 +416,26 @@ export function VehicleFormPage() {
                   control={control}
                   name="driver"
                   render={({ field }) => {
-                    const selectedDriver = (driversQuery.data ?? []).find(
-                      (d) => String(d.id) === field.value,
-                    );
-                    // Radix only learns an item's label once that <SelectItem>
-                    // has actually mounted, which normally only happens after
-                    // the dropdown is opened at least once. On first load
-                    // that means a pre-selected driver shows as "Unassigned"
-                    // until the user clicks the dropdown. Passing the label
-                    // explicitly here makes the current selection display
-                    // correctly right away.
-                    const currentDriver = vehicleQuery.data?.driver;
-                    const label =
-                      field.value !== NONE && selectedDriver
-                        ? `${selectedDriver.full_name} · ${selectedDriver.license_number}`
-                        : field.value !== NONE && currentDriver
-                          ? `${currentDriver.full_name} · ${currentDriver.license_number}`
-                          : isEditing && !dirtyFields.driver
-                            ? t('common.notAvailable')
-                            : t('vehicleForm.unassigned');
+                    if (driversQuery.isLoading) return <Skeleton className="h-9 w-full" />;
+                    const selected = driverOptions.find((o) => o.value === field.value);
+                    const label = field.value !== NONE && selected ? selected.label : t('vehicleForm.unassigned');
                     return (
-                      <Select value={field.value} onValueChange={field.onChange}>
+                      <Select
+                        value={field.value || NONE}
+                        // Radix can emit a spurious '' while its options are (re)registering;
+                        // real choices are never '' (unassigned is the NONE sentinel).
+                        onValueChange={(value) => {
+                          if (value) field.onChange(value);
+                        }}
+                      >
                         <SelectTrigger>
                           <SelectValue placeholder={t('vehicleForm.unassigned')}>{label}</SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={NONE}>{t('vehicleForm.unassigned')}</SelectItem>
-                          {(driversQuery.data ?? []).map((d) => (
-                            <SelectItem key={d.id} value={String(d.id)}>
-                              {d.full_name} · {d.license_number}
+                          {driverOptions.map((o) => (
+                            <SelectItem key={o.value} value={o.value}>
+                              {o.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -422,19 +452,24 @@ export function VehicleFormPage() {
                     control={control}
                     name="assigned_manager"
                     render={({ field }) => {
-                      const selectedManager = managers.find((m) => String(m.id) === field.value);
-                      const label =
-                        field.value !== NONE && selectedManager ? selectedManager.label : t('vehicleForm.unassigned');
+                      if (managersLoading) return <Skeleton className="h-9 w-full" />;
+                      const selected = managerOptions.find((o) => o.value === field.value);
+                      const label = field.value !== NONE && selected ? selected.label : t('vehicleForm.unassigned');
                       return (
-                        <Select value={field.value} onValueChange={field.onChange}>
+                        <Select
+                          value={field.value || NONE}
+                          onValueChange={(value) => {
+                            if (value) field.onChange(value);
+                          }}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder={t('vehicleForm.unassigned')}>{label}</SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value={NONE}>{t('vehicleForm.unassigned')}</SelectItem>
-                            {managers.map((m) => (
-                              <SelectItem key={m.id} value={String(m.id)}>
-                                {m.label}
+                            {managerOptions.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>
+                                {o.label}
                               </SelectItem>
                             ))}
                           </SelectContent>
