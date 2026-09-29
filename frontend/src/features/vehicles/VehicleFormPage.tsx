@@ -164,7 +164,7 @@ export function VehicleFormPage() {
                 ? gregorianYearToJalali(vehicleQuery.data.year)
                 : vehicleQuery.data.year,
           status: vehicleQuery.data.status,
-          driver: vehicleQuery.data.driver ? String(vehicleQuery.data.driver.id) : NONE,
+          driver: vehicleQuery.data.driver?.is_active ? String(vehicleQuery.data.driver.id) : NONE,
           assigned_manager: vehicleQuery.data.assigned_manager
             ? String(vehicleQuery.data.assigned_manager)
             : NONE,
@@ -387,10 +387,15 @@ export function VehicleFormPage() {
                     // until the user clicks the dropdown. Passing the label
                     // explicitly here makes the current selection display
                     // correctly right away.
+                    const currentDriver = vehicleQuery.data?.driver;
                     const label =
                       field.value !== NONE && selectedDriver
                         ? `${selectedDriver.full_name} · ${selectedDriver.license_number}`
-                        : t('vehicleForm.unassigned');
+                        : field.value !== NONE && currentDriver
+                          ? `${currentDriver.full_name} · ${currentDriver.license_number}`
+                          : isEditing && !dirtyFields.driver
+                            ? t('common.notAvailable')
+                            : t('vehicleForm.unassigned');
                     return (
                       <Select value={field.value} onValueChange={field.onChange}>
                         <SelectTrigger>

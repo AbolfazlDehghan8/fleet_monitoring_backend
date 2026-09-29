@@ -32,7 +32,11 @@ export function useUpdateAdminUser(userId: number) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (payload: AdminUserUpdateRequest) => adminUsersApi.update(userId, payload),
-    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.drivers.all });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.vehicles.all });
+    },
   });
 }
 

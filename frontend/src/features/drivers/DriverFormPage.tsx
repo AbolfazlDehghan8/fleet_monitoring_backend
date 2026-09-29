@@ -32,6 +32,11 @@ function useSchemas(t: (key: TranslationKey, vars?: Record<string, string | numb
     .max(11, t('driverForm.phoneNumberErr'))
     .regex(IRAN_MOBILE_REGEX, t('driverForm.phoneNumberErr'));
 
+  const optionalPhoneField = z
+    .string()
+    .max(11, t('driverForm.phoneNumberErr'))
+    .refine((value) => value === '' || IRAN_MOBILE_REGEX.test(value), t('driverForm.phoneNumberErr'));
+
   const licenseField = z
     .string()
     .min(1, t('driverForm.licenseRequired'))
@@ -45,7 +50,7 @@ function useSchemas(t: (key: TranslationKey, vars?: Record<string, string | numb
 
   const editSchema = z.object({
     license_number: licenseField,
-    phone_number: phoneField,
+    phone_number: optionalPhoneField,
     is_active: z.boolean(),
   });
 
