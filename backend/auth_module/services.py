@@ -332,16 +332,25 @@ class UserService:
 
     @staticmethod
     def _sync_role_side_effects(user, previous_role, new_role, new_active):
-        stops_being_driver = previous_role == User.Role.DRIVER and (
-            new_role != User.Role.DRIVER or not new_active
-        )
-        if stops_being_driver:
+        leaves_driver_role = previous_role == User.Role.DRIVER and new_role != User.Role.DRIVER
+        deactivated_driver = previous_role == User.Role.DRIVER and new_role == User.Role.DRIVER and not new_active
+        if leaves_driver_role or deactivated_driver:
             driver_profile = Driver.objects.filter(user_id=user.id).first()
             if driver_profile:
+                public_ids = list(
+                    Vehicle.objects.filter(driver_id=driver_profile.id).values_list('vehicle_id', flat=True)
+                )
                 Vehicle.objects.filter(driver_id=driver_profile.id).update(driver=None)
-                if driver_profile.is_active:
+                if leaves_driver_role:
+                    driver_profile.delete()
+                elif driver_profile.is_active:
                     driver_profile.is_active = False
                     driver_profile.save(update_fields=['is_active', 'updated_at'])
+                for public_id in public_ids:
+                    try:
+                        cache.delete(f'fleet:vehicle:lookup:{public_id}')
+                    except Exception:
+                        pass
 
         stops_being_manager = previous_role == User.Role.FLEET_MANAGER and (
             new_role != User.Role.FLEET_MANAGER or not new_active
