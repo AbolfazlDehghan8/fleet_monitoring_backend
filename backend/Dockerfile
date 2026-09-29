@@ -10,7 +10,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir --user \
+    -i https://mirror-pypi.runflare.com/simple \
+    --trusted-host mirror-pypi.runflare.com \
+    --default-timeout=100 --retries 10 \
+    -r requirements.txt
 
 
 FROM python:3.12-slim AS runtime
