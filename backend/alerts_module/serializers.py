@@ -5,9 +5,9 @@ from .models import Alert
 
 class AlertSerializer(serializers.ModelSerializer):
     vehicle_id = serializers.CharField(source='vehicle.vehicle_id', read_only=True)
-    acknowledged_by_username = serializers.CharField(
-        source='acknowledged_by.username', read_only=True, default=None
-    )
+    acknowledged = serializers.SerializerMethodField()
+    acknowledged_by_username = serializers.SerializerMethodField()
+    acknowledged_at = serializers.DateTimeField(source='my_ack_at', read_only=True, default=None)
 
     class Meta:
         model = Alert
@@ -16,6 +16,14 @@ class AlertSerializer(serializers.ModelSerializer):
             'acknowledged', 'acknowledged_by_username', 'acknowledged_at', 'created_at',
         ]
         read_only_fields = fields
+
+    def get_acknowledged(self, obj) -> bool:
+        return getattr(obj, 'my_ack_at', None) is not None
+
+    def get_acknowledged_by_username(self, obj) -> str | None:
+        if getattr(obj, 'my_ack_at', None) is None:
+            return None
+        return self.context['request'].user.username
 
 
 class AcknowledgeOwnAlertSerializer(serializers.Serializer):
