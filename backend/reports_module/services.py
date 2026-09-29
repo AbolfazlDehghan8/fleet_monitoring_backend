@@ -3,11 +3,11 @@ import io
 import logging
 from datetime import timedelta
 
-from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, Min, Q
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, Min, OuterRef, Subquery
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
 
-from alerts_module.models import Alert
+from alerts_module.models import Alert, AlertAcknowledgment
 from telemetry_module.models import TelemetryLog
 from vehicles_module.models import Vehicle
 
@@ -29,7 +29,7 @@ class ReportService:
         return Vehicle.objects.none()
 
     @staticmethod
-    def _build_summary(vehicles, start_date, end_date):
+    def _build_summary(vehicles, start_date, end_date, user=None):
         status_counts = dict(
             vehicles.order_by().values_list('status').annotate(count=Count('id'))
         )
@@ -51,19 +51,21 @@ class ReportService:
         alerts_qs = Alert.objects.filter(
             vehicle__in=vehicles, created_at__gte=start_date, created_at__lte=end_date,
         )
-        alert_totals = alerts_qs.aggregate(
-            total=Count('id'),
-            acknowledged=Count('id', filter=Q(acknowledged=True)),
-        )
+        first_ack = AlertAcknowledgment.objects.filter(alert=OuterRef('pk'))
+        if user is not None:
+            first_ack = first_ack.filter(user=user)
+        acked_alerts_qs = alerts_qs.annotate(
+            ack_at=Subquery(first_ack.order_by('created_at').values('created_at')[:1])
+        ).filter(ack_at__isnull=False)
+
+        alert_totals = {'total': alerts_qs.count(), 'acknowledged': acked_alerts_qs.count()}
         alerts_by_severity = dict(
             alerts_qs.order_by().values_list('severity').annotate(count=Count('id'))
         )
 
-        avg_ack_seconds = alerts_qs.filter(
-            acknowledged=True, acknowledged_at__isnull=False,
-        ).annotate(
+        avg_ack_seconds = acked_alerts_qs.annotate(
             response_time=ExpressionWrapper(
-                F('acknowledged_at') - F('created_at'), output_field=DurationField(),
+                F('ack_at') - F('created_at'), output_field=DurationField(),
             )
         ).aggregate(avg=Avg('response_time'))['avg']
 
@@ -100,7 +102,7 @@ class ReportService:
         if vehicle_id:
             vehicles = vehicles.filter(vehicle_id=vehicle_id)
 
-        return ReportService._build_summary(vehicles, start_date, end_date)
+        return ReportService._build_summary(vehicles, start_date, end_date, user=user)
 
     @staticmethod
     def create_pending_report(user, start_date=None, end_date=None, vehicle_id=None):
