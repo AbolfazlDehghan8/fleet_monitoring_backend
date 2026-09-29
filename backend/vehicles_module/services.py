@@ -299,33 +299,34 @@ class VehicleService:
             _safe_cache_delete(f'{DASHBOARD_STATS_CACHE_KEY}:{manager_id}', 'invalidate_dashboard_cache')
 
     @staticmethod
+    def _count_open_alerts(user):
+        alerts_qs = Alert.objects.exclude(acknowledgments__user=user).exclude(dismissals__user=user)
+        if not user.is_admin:
+            alerts_qs = alerts_qs.filter(vehicle__assigned_manager=user)
+        return alerts_qs.count()
+
+    @staticmethod
     def get_dashboard_stats(user):
         if not (user.is_admin or user.is_fleet_manager):
             raise PermissionDenied('Only admin and fleet_manager may view dashboard stats')
 
         cache_key = DASHBOARD_STATS_CACHE_KEY if user.is_admin else f'{DASHBOARD_STATS_CACHE_KEY}:{user.id}'
         cached = _safe_cache_get(cache_key, 'get_dashboard_stats')
-        if cached is not None:
-            return cached
+        if cached is None:
+            queryset = Vehicle.objects.all() if user.is_admin else Vehicle.objects.filter(assigned_manager=user)
 
-        queryset = Vehicle.objects.all() if user.is_admin else Vehicle.objects.filter(assigned_manager=user)
+            by_status = {choice.value: 0 for choice in Vehicle.Status}
+            for row in queryset.order_by().values('status').annotate(count=models.Count('id')):
+                by_status[row['status']] = row['count']
 
-        alerts_qs = Alert.objects.filter(acknowledged=False)
-        if not user.is_admin:
-            alerts_qs = alerts_qs.filter(vehicle__assigned_manager=user)
+            cached = {
+                'total_vehicles': sum(by_status.values()),
+                'vehicles_by_status': by_status,
+                'generated_at': django_timezone.now().isoformat(),
+            }
+            _safe_cache_set(cache_key, cached, DASHBOARD_STATS_CACHE_TTL_SECONDS, 'get_dashboard_stats')
 
-        by_status = {choice.value: 0 for choice in Vehicle.Status}
-        for row in queryset.order_by().values('status').annotate(count=models.Count('id')):
-            by_status[row['status']] = row['count']
-
-        payload = {
-            'total_vehicles': sum(by_status.values()),
-            'vehicles_by_status': by_status,
-            'unacknowledged_alerts': alerts_qs.count(),
-            'generated_at': django_timezone.now().isoformat(),
-        }
-        _safe_cache_set(cache_key, payload, DASHBOARD_STATS_CACHE_TTL_SECONDS, 'get_dashboard_stats')
-        return payload
+        return {**cached, 'unacknowledged_alerts': VehicleService._count_open_alerts(user)}
 
 
 class DriverService:
