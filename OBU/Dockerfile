@@ -6,10 +6,10 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-
-COPY obu_fleet_simulator.py .
-
 RUN useradd --create-home --uid 1000 obu
+
+COPY --chown=obu:obu obu_fleet_simulator.py .
+
 USER obu
 
 CMD ["python", "obu_fleet_simulator.py"]
