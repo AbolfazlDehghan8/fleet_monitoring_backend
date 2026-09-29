@@ -2,11 +2,10 @@ import logging
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db import transaction
-from django.utils import timezone as django_timezone
+from django.db.models import OuterRef, Subquery
 from rest_framework.exceptions import NotFound, PermissionDenied
 
-from .models import Alert, AlertDismissal
+from .models import Alert, AlertAcknowledgment, AlertDismissal
 from .tasks import dispatch_alert_notification
 
 audit_logger = logging.getLogger('audit')
@@ -78,6 +77,11 @@ class AlertService:
         raise PermissionDenied('Unknown role')
 
     @staticmethod
+    def _with_ack_state(queryset, user):
+        own_ack = AlertAcknowledgment.objects.filter(alert=OuterRef('pk'), user=user)
+        return queryset.annotate(my_ack_at=Subquery(own_ack.values('created_at')[:1]))
+
+    @staticmethod
     def list_alerts(user):
         if user.is_admin:
             queryset = Alert.objects.all()
@@ -85,26 +89,26 @@ class AlertService:
             queryset = Alert.objects.filter(vehicle__assigned_manager=user)
         else:
             queryset = Alert.objects.none()
-        return (
-            queryset.exclude(dismissals__user=user)
-            .select_related('vehicle', 'acknowledged_by')[:500]
-        )
+        queryset = queryset.exclude(dismissals__user=user).select_related('vehicle')
+        return AlertService._with_ack_state(queryset, user)[:500]
 
     @staticmethod
     def list_alerts_for_driver(user):
         driver_profile = getattr(user, 'driver_profile', None)
         if driver_profile is None or not driver_profile.is_active:
             return Alert.objects.none()
-        return (
+        queryset = (
             Alert.objects.filter(vehicle__driver=driver_profile)
             .exclude(dismissals__user=user)
-            .select_related('vehicle', 'acknowledged_by')[:500]
+            .select_related('vehicle')
         )
+        return AlertService._with_ack_state(queryset, user)[:500]
 
     @staticmethod
     def get_alert(actor, alert_id):
+        queryset = AlertService._with_ack_state(Alert.objects.select_related('vehicle'), actor)
         try:
-            alert = Alert.objects.select_related('vehicle', 'acknowledged_by').get(id=alert_id)
+            alert = queryset.get(id=alert_id)
         except Alert.DoesNotExist:
             raise NotFound('Alert not found')
         AlertService._check_scope(actor, alert)
@@ -112,29 +116,14 @@ class AlertService:
 
     @staticmethod
     def acknowledge(actor, alert_id):
-        with transaction.atomic():
-            try:
-                alert = (
-                    Alert.objects.select_for_update(of=('self',))
-                    .select_related('vehicle', 'acknowledged_by')
-                    .get(id=alert_id)
-                )
-            except Alert.DoesNotExist:
-                raise NotFound('Alert not found')
-
-            AlertService._check_scope(actor, alert)
-
-            if not alert.acknowledged:
-                alert.acknowledged = True
-                alert.acknowledged_by = actor
-                alert.acknowledged_at = django_timezone.now()
-                alert.save(update_fields=['acknowledged', 'acknowledged_by', 'acknowledged_at'])
-
-                audit_logger.info(
-                    'alert_acknowledged',
-                    extra={'actor': actor.id, 'action': 'acknowledge_alert', 'target': alert.id},
-                )
-
+        alert = AlertService.get_alert(actor, alert_id)
+        acknowledgment, created = AlertAcknowledgment.objects.get_or_create(alert=alert, user=actor)
+        alert.my_ack_at = acknowledgment.created_at
+        if created:
+            audit_logger.info(
+                'alert_acknowledged',
+                extra={'actor': actor.id, 'action': 'acknowledge_alert', 'target': alert.id},
+            )
         return alert
 
     @staticmethod
