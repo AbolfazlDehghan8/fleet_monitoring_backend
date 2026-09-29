@@ -856,3 +856,62 @@ class CompanyServiceTests(VehicleTestBase):
         oldest = Company.objects.create(name='Oldest Company')
         Company.objects.create(name='Zzz Later Company')
         self.assertEqual(CompanyService.get_company().pk, oldest.pk)
+
+
+class DriverDeactivateAndRoleChangeTests(VehicleTestBase):
+    def _driver(self, n, phone=''):
+        user = User.objects.create_user(
+            username=f'rc{n}', email=f'rc{n}@example.com', password='StrongPass123', role='driver'
+        )
+        driver = Driver.objects.create(user=user, license_number=f'80000000{n:02d}', phone_number=phone)
+        return user, driver
+
+    def test_deactivating_driver_with_unchanged_phone_succeeds(self):
+        _, driver = self._driver(1, '09121111111')
+        self._login_as('admin01')
+        response = self.client.patch(reverse('driver-detail', args=[driver.id]), {
+            'license_number': driver.license_number, 'phone_number': '09121111111', 'is_active': False,
+        })
+        self.assertEqual(response.status_code, 200, response.data)
+        driver.refresh_from_db()
+        self.assertFalse(driver.is_active)
+
+    def test_changing_phone_to_another_drivers_phone_is_still_rejected(self):
+        self._driver(2, '09122222222')
+        _, other = self._driver(3, '09123333333')
+        self._login_as('admin01')
+        response = self.client.patch(
+            reverse('driver-detail', args=[other.id]), {'phone_number': '09122222222'}
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('phone_number', response.data)
+
+    def test_role_change_deletes_driver_profile_and_unassigns_vehicles(self):
+        user, driver = self._driver(4, '09124444444')
+        vehicle = Vehicle.objects.create(
+            vehicle_id='veh_rc4', company=self.company, license_plate='12ب34568', driver=driver,
+        )
+        self._login_as('admin01')
+        response = self.client.patch(reverse('admin-user-detail', args=[user.id]), {'role': 'fleet_manager'})
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertFalse(Driver.objects.filter(pk=driver.pk).exists())
+        vehicle.refresh_from_db()
+        self.assertIsNone(vehicle.driver_id)
+
+    def test_user_can_get_a_fresh_driver_profile_after_returning_to_driver_role(self):
+        user, _ = self._driver(5, '09125555555')
+        self._login_as('admin01')
+        self.client.patch(reverse('admin-user-detail', args=[user.id]), {'role': 'fleet_manager'})
+        self.client.patch(reverse('admin-user-detail', args=[user.id]), {'role': 'driver'})
+        response = self.client.post(reverse('driver-list-create'), {
+            'user': user.id, 'license_number': '8000000005', 'phone_number': '09125555555',
+        })
+        self.assertEqual(response.status_code, 201, response.data)
+
+    def test_deactivating_driver_account_keeps_profile_but_marks_inactive(self):
+        user, driver = self._driver(6)
+        self._login_as('admin01')
+        response = self.client.patch(reverse('admin-user-detail', args=[user.id]), {'is_active': False})
+        self.assertEqual(response.status_code, 200, response.data)
+        driver.refresh_from_db()
+        self.assertFalse(driver.is_active)
