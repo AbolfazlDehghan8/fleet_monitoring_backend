@@ -226,7 +226,8 @@ class DriverDetailView(APIView):
         summary='Update a driver profile',
     )
     def patch(self, request, driver_id):
-        serializer = DriverUpdateSerializer(data=request.data, partial=True)
+        instance = DriverService.get_driver(request.user, driver_id)
+        serializer = DriverUpdateSerializer(instance, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         driver = DriverService.update_driver(request.user, driver_id, serializer.validated_data)
         return Response(DriverSerializer(driver).data, status=status.HTTP_200_OK)
