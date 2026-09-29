@@ -14,7 +14,7 @@ from rules_module.models import Rule
 from telemetry_module.models import TelemetryLog
 from vehicles_module.models import Company, Driver, Vehicle
 
-from .models import Alert
+from .models import Alert, AlertAcknowledgment
 from .services import ALERT_COOLDOWN_CACHE_KEY, AlertService
 from .tasks import dispatch_alert_notification
 
@@ -88,7 +88,7 @@ class AlertCreationTests(AlertsTestBase):
     def test_create_from_violation_creates_alert(self):
         self.assertEqual(Alert.objects.count(), 1)
         self.assertEqual(self.alert.severity, 'high')
-        self.assertFalse(self.alert.acknowledged)
+        self.assertFalse(self.alert.acknowledgments.exists())
 
     def test_alert_survives_rule_deletion(self):
         self.rule.delete()
@@ -246,17 +246,16 @@ class AlertAcknowledgeTests(AlertsTestBase):
         self._auth_as('driveruser')
         response = self.client.post(reverse('alert-acknowledge', args=[self.alert.id]))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.alert.refresh_from_db()
-        self.assertTrue(self.alert.acknowledged)
-        self.assertEqual(self.alert.acknowledged_by_id, self.driver_user.id)
+        self.assertTrue(
+            AlertAcknowledgment.objects.filter(alert=self.alert, user=self.driver_user).exists()
+        )
 
     def test_deactivated_driver_cannot_acknowledge(self):
         Driver.objects.filter(pk=self.driver.pk).update(is_active=False)
         self._auth_as('driveruser')
         response = self.client.post(reverse('alert-acknowledge', args=[self.alert.id]))
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-        self.alert.refresh_from_db()
-        self.assertFalse(self.alert.acknowledged)
+        self.assertFalse(self.alert.acknowledgments.exists())
 
     def test_other_fleet_manager_cannot_acknowledge(self):
         self._auth_as('manager2')
@@ -266,11 +265,12 @@ class AlertAcknowledgeTests(AlertsTestBase):
     def test_acknowledge_is_idempotent(self):
         self._auth_as('admin')
         self.client.post(reverse('alert-acknowledge', args=[self.alert.id]))
-        first_ack_time = Alert.objects.get(id=self.alert.id).acknowledged_at
+        first_ack_time = AlertAcknowledgment.objects.get(alert=self.alert, user=self.admin).created_at
 
         response = self.client.post(reverse('alert-acknowledge', args=[self.alert.id]))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        second_ack_time = Alert.objects.get(id=self.alert.id).acknowledged_at
+        self.assertEqual(AlertAcknowledgment.objects.filter(alert=self.alert, user=self.admin).count(), 1)
+        second_ack_time = AlertAcknowledgment.objects.get(alert=self.alert, user=self.admin).created_at
         self.assertEqual(first_ack_time, second_ack_time)
 
     def test_acknowledge_nonexistent_alert_404(self):
@@ -289,8 +289,9 @@ class AlertMeAcknowledgeTests(AlertsTestBase):
         self._auth_as('driveruser')
         response = self.client.post(reverse('alert-me-acknowledge'), {'alert_id': self.alert.id})
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.alert.refresh_from_db()
-        self.assertTrue(self.alert.acknowledged)
+        self.assertTrue(
+            AlertAcknowledgment.objects.filter(alert=self.alert, user=self.driver_user).exists()
+        )
 
     def test_driver_cannot_acknowledge_other_vehicle_alert_via_me_endpoint(self):
         other_driver_user = User.objects.create_user(
@@ -405,3 +406,65 @@ class AlertDismissTests(AlertsTestBase):
         self._auth_as('admin')
         response = self.client.delete(reverse('alert-detail', args=[999999]))
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+class AlertRoleIndependenceTests(AlertsTestBase):
+    def _ack(self, username):
+        self._auth_as(username)
+        return self.client.post(reverse('alert-acknowledge', args=[self.alert.id]))
+
+    def _state(self, username, url_name='alert-list'):
+        self._auth_as(username)
+        rows = [a for a in self.client.get(reverse(url_name)).data if a['id'] == self.alert.id]
+        return rows[0] if rows else None
+
+    def test_admin_ack_does_not_acknowledge_for_manager_or_driver(self):
+        self.assertEqual(self._ack('admin').status_code, status.HTTP_200_OK)
+        self.assertTrue(self._state('admin')['acknowledged'])
+        self.assertFalse(self._state('manager')['acknowledged'])
+        self.assertFalse(self._state('driveruser', 'alert-me')['acknowledged'])
+
+    def test_manager_ack_does_not_acknowledge_for_admin_or_driver(self):
+        self._ack('manager')
+        self.assertTrue(self._state('manager')['acknowledged'])
+        self.assertFalse(self._state('admin')['acknowledged'])
+        self.assertFalse(self._state('driveruser', 'alert-me')['acknowledged'])
+
+    def test_driver_ack_does_not_acknowledge_for_admin_or_manager(self):
+        self._ack('driveruser')
+        self.assertTrue(self._state('driveruser', 'alert-me')['acknowledged'])
+        self.assertFalse(self._state('admin')['acknowledged'])
+        self.assertFalse(self._state('manager')['acknowledged'])
+
+    def test_each_role_keeps_its_own_acknowledgment_details(self):
+        self._ack('admin')
+        self._ack('manager')
+        admin_row = self._state('admin')
+        manager_row = self._state('manager')
+        self.assertEqual(admin_row['acknowledged_by_username'], 'admin')
+        self.assertEqual(manager_row['acknowledged_by_username'], 'manager')
+        self.assertIsNone(self._state('driveruser', 'alert-me')['acknowledged_by_username'])
+        self.assertEqual(AlertAcknowledgment.objects.filter(alert=self.alert).count(), 2)
+
+    def test_detail_endpoint_reflects_only_own_acknowledgment(self):
+        self._ack('admin')
+        self._auth_as('manager')
+        data = self.client.get(reverse('alert-detail', args=[self.alert.id])).data
+        self.assertFalse(data['acknowledged'])
+        self.assertIsNone(data['acknowledged_at'])
+
+    def test_dismiss_does_not_touch_acknowledgment_or_other_roles(self):
+        self._ack('manager')
+        self._auth_as('admin')
+        self.client.delete(reverse('alert-detail', args=[self.alert.id]))
+        self.assertIsNone(self._state('admin'))
+        self.assertTrue(self._state('manager')['acknowledged'])
+        self.assertFalse(self._state('driveruser', 'alert-me')['acknowledged'])
+
+    def test_dismissing_one_role_keeps_alert_open_for_the_others(self):
+        self._auth_as('driveruser')
+        self.client.delete(reverse('alert-detail', args=[self.alert.id]))
+        self.assertIsNone(self._state('driveruser', 'alert-me'))
+        self.assertIsNotNone(self._state('admin'))
+        self.assertIsNotNone(self._state('manager'))
+        self.assertFalse(self._state('admin')['acknowledged'])
