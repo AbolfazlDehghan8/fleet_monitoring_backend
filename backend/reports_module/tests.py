@@ -144,11 +144,20 @@ class ReportAggregationTests(ReportsTestBase):
         self.assertIsNone(report['alerts']['avg_acknowledgment_time_seconds'])
 
     def test_acknowledgment_time_measured(self):
-        AlertService.acknowledge(self.manager, self.alert.id)
+        AlertService.acknowledge(self.admin, self.alert.id)
         report = ReportService.generate_fleet_summary(self.admin, vehicle_id='veh_r1')
         self.assertEqual(report['alerts']['acknowledged'], 1)
         self.assertIsNotNone(report['alerts']['avg_acknowledgment_time_seconds'])
         self.assertGreaterEqual(report['alerts']['avg_acknowledgment_time_seconds'], 0)
+
+    def test_acknowledgments_are_counted_per_requesting_user(self):
+        AlertService.acknowledge(self.manager, self.alert.id)
+        admin_report = ReportService.generate_fleet_summary(self.admin, vehicle_id='veh_r1')
+        manager_report = ReportService.generate_fleet_summary(self.manager, vehicle_id='veh_r1')
+        self.assertEqual(admin_report['alerts']['acknowledged'], 0)
+        self.assertEqual(admin_report['alerts']['unacknowledged'], 1)
+        self.assertEqual(manager_report['alerts']['acknowledged'], 1)
+        self.assertEqual(manager_report['alerts']['unacknowledged'], 0)
 
     def test_date_range_excludes_out_of_window_data(self):
         old_start = timezone.now() - timedelta(days=100)
