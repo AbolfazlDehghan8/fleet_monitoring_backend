@@ -103,8 +103,6 @@ const EXACT_MESSAGES: Record<string, TranslationKey> = {
   'You cannot demote or deactivate your own account': 'apiError.cannotSelfDemote',
   'You cannot delete your own account': 'apiError.cannotSelfDelete',
   'Cannot remove the last active admin': 'apiError.cannotRemoveLastAdmin',
-  'Vehicle has recorded telemetry or alerts and cannot be deleted; set its status to decommissioned instead':
-    'apiError.vehicleHasHistoryCannotDelete',
   'You do not have access to this driver': 'apiError.noDriverAccess',
   'Assigned driver must be active': 'apiError.driverMustBeActive',
   'timestamp is in the future': 'apiError.telemetryTimestampFuture',

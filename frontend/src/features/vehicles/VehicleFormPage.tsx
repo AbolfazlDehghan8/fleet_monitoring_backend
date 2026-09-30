@@ -20,7 +20,7 @@ import { ROLES } from '@/constants/roles';
 import { VEHICLE_STATUSES } from '@/constants/statuses';
 import { useAuth } from '@/features/auth/AuthContext';
 import type { TranslationKey } from '@/i18n/translations';
-import type { VehicleUpdateRequest } from '@/types/vehicles';
+import type { Vehicle, VehicleUpdateRequest } from '@/types/vehicles';
 import { ApiError } from '@/types/common';
 import { getApiErrorMessage } from '@/i18n/apiErrors';
 import { IRAN_PLATE_REGEX, OBU_SERIAL_REGEX, VEHICLE_ID_REGEX, VIN_REGEX } from '@/utils/iranValidators';
@@ -108,13 +108,37 @@ type VehicleFormValues = {
 export function VehicleFormPage() {
   const { t, language } = useLanguage();
   const params = useParams<{ id: string }>();
-  const isEditing = Boolean(params.id);
   const vehicleId = params.id ? Number(params.id) : undefined;
+  const vehicleQuery = useVehicle(vehicleId);
+
+  if (vehicleId !== undefined && vehicleQuery.isLoading) {
+    return <p className="text-sm text-muted-foreground">{t('vehicleForm.loadingVehicle')}</p>;
+  }
+
+  if (vehicleId !== undefined && (vehicleQuery.isError || !vehicleQuery.data)) {
+    return <ErrorState onRetry={() => void vehicleQuery.refetch()} title={t('vehicleForm.unableToLoad')} />;
+  }
+
+  // The form is mounted only once the vehicle has loaded, so its initial values (status
+  // included) are the vehicle's saved ones from the very first render. Feeding them in
+  // later through react-hook-form's `values` option briefly showed the create-time
+  // defaults (status "active") and could reset the user's edits.
+  return (
+    <VehicleForm
+      key={vehicleQuery.data ? `${vehicleQuery.data.id}:${vehicleQuery.data.updated_at}:${language}` : 'new'}
+      vehicle={vehicleQuery.data}
+      vehicleId={vehicleId}
+    />
+  );
+}
+
+function VehicleForm({ vehicle, vehicleId }: { vehicle?: Vehicle; vehicleId?: number }) {
+  const { t, language } = useLanguage();
+  const isEditing = vehicle !== undefined;
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === ROLES.ADMIN;
 
-  const vehicleQuery = useVehicle(vehicleId);
   // Not the roster (`useDrivers`) — that's scoped to "already assigned" drivers
   // only and would never show a freshly created, not-yet-assigned driver here.
   const driversQuery = useAssignableDrivers();
@@ -158,41 +182,38 @@ export function VehicleFormPage() {
     formState: { errors, isSubmitting, dirtyFields },
   } = useForm<VehicleFormValues>({
     resolver: zodResolver(vehicleSchema),
-    values: vehicleQuery.data
+    defaultValues: vehicle
       ? {
-          vehicle_id: vehicleQuery.data.vehicle_id,
-          license_plate: vehicleQuery.data.license_plate,
-          vin: vehicleQuery.data.vin ?? '',
-          make: vehicleQuery.data.make ?? '',
-          model: vehicleQuery.data.model ?? '',
+          vehicle_id: vehicle.vehicle_id,
+          license_plate: vehicle.license_plate,
+          vin: vehicle.vin ?? '',
+          make: vehicle.make ?? '',
+          model: vehicle.model ?? '',
           year:
-            vehicleQuery.data.year == null
+            vehicle.year == null
               ? Number.NaN
               : language === 'fa'
-                ? gregorianYearToJalali(vehicleQuery.data.year)
-                : vehicleQuery.data.year,
-          status: vehicleQuery.data.status,
-          driver: vehicleQuery.data.driver?.is_active ? String(vehicleQuery.data.driver.id) : NONE,
-          assigned_manager: vehicleQuery.data.assigned_manager
-            ? String(vehicleQuery.data.assigned_manager)
-            : NONE,
-          obu_serial_number: vehicleQuery.data.obu?.serial_number ?? '',
-          obu_firmware_version: vehicleQuery.data.obu?.firmware_version ?? '',
+                ? gregorianYearToJalali(vehicle.year)
+                : vehicle.year,
+          status: vehicle.status,
+          driver: vehicle.driver?.is_active ? String(vehicle.driver.id) : NONE,
+          assigned_manager: vehicle.assigned_manager ? String(vehicle.assigned_manager) : NONE,
+          obu_serial_number: vehicle.obu?.serial_number ?? '',
+          obu_firmware_version: vehicle.obu?.firmware_version ?? '',
         }
-      : undefined,
-    defaultValues: {
-      vehicle_id: '',
-      license_plate: '',
-      vin: '',
-      make: '',
-      model: '',
-      year: Number.NaN,
-      status: 'active',
-      driver: NONE,
-      assigned_manager: NONE,
-      obu_serial_number: '',
-      obu_firmware_version: '',
-    },
+      : {
+          vehicle_id: '',
+          license_plate: '',
+          vin: '',
+          make: '',
+          model: '',
+          year: Number.NaN,
+          status: 'active',
+          driver: NONE,
+          assigned_manager: NONE,
+          obu_serial_number: '',
+          obu_firmware_version: '',
+        },
   });
 
   // The dropdown options must already contain the vehicle's *current* driver and
@@ -201,7 +222,7 @@ export function VehicleFormPage() {
   // asynchronously, and the assignable/manager lists may not even include the
   // current one), and it shows "Unassigned" / resets the value to empty, which
   // forces the user to pick them again. So the current ones are always injected.
-  const currentVehicle = vehicleQuery.data;
+  const currentVehicle = vehicle;
   const driverOptions = React.useMemo(() => {
     const options = (driversQuery.data ?? []).map((d) => ({
       value: String(d.id),
@@ -225,14 +246,6 @@ export function VehicleFormPage() {
     }
     return options;
   }, [managers, currentVehicle?.assigned_manager, currentVehicle?.assigned_manager_username]);
-
-  if (isEditing && vehicleQuery.isLoading) {
-    return <p className="text-sm text-muted-foreground">{t('vehicleForm.loadingVehicle')}</p>;
-  }
-
-  if (isEditing && vehicleQuery.isError) {
-    return <ErrorState onRetry={() => void vehicleQuery.refetch()} title={t('vehicleForm.unableToLoad')} />;
-  }
 
   async function onSubmit(values: VehicleFormValues) {
     if (submitLockRef.current) return;
@@ -392,9 +405,16 @@ export function VehicleFormPage() {
                   control={control}
                   name="status"
                   render={({ field }) => (
-                    <Select value={field.value} onValueChange={field.onChange}>
+                    <Select
+                      value={field.value}
+                      // Radix can emit a spurious '' while it (re)registers its options; a real
+                      // status is never empty, so ignore it instead of wiping the saved status.
+                      onValueChange={(value) => {
+                        if (value) field.onChange(value);
+                      }}
+                    >
                       <SelectTrigger>
-                        <SelectValue />
+                        <SelectValue>{t(`vehicleStatus.${field.value}`)}</SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         {Object.values(VEHICLE_STATUSES).map((s) => (
