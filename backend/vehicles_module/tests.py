@@ -701,18 +701,31 @@ class VehicleDeleteGuardTests(VehicleTestBase):
         self.vehicle = Vehicle.objects.create(vehicle_id='veh_del', license_plate='12ب44444', company=self.company)
         self._login_as('admin01')
 
-    def test_vehicle_with_telemetry_cannot_be_deleted(self):
+    def test_vehicle_with_telemetry_and_alerts_can_be_deleted(self):
         TelemetryLog.objects.create(
             vehicle=self.vehicle, obu_serial='OBU-2026-0001', timestamp=timezone.now(), speed=1, engine_temperature=1,
             battery_voltage=1, fuel_level=1, latitude=1, longitude=1, odometer=1, raw_payload={},
         )
+        Alert.objects.create(
+            vehicle=self.vehicle, rule_name='r', metric='speed', threshold=1, value=2, severity='low',
+        )
         response = self.client.delete(reverse('vehicle-detail', args=[self.vehicle.id]))
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('decommissioned', str(response.data['detail']))
-        self.assertTrue(Vehicle.objects.filter(pk=self.vehicle.pk).exists())
-        self.assertEqual(TelemetryLog.objects.count(), 1)
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(Vehicle.objects.filter(pk=self.vehicle.pk).exists())
+        self.assertEqual(TelemetryLog.objects.count(), 0)
+        self.assertEqual(Alert.objects.count(), 0)
 
-    def test_vehicle_without_history_can_still_be_deleted(self):
+    def test_deleting_a_vehicle_keeps_other_vehicles_history(self):
+        other = Vehicle.objects.create(vehicle_id='veh_keep', license_plate='12ب55555', company=self.company)
+        for vehicle in (self.vehicle, other):
+            TelemetryLog.objects.create(
+                vehicle=vehicle, obu_serial='OBU-2026-0001', timestamp=timezone.now(), speed=1, engine_temperature=1,
+                battery_voltage=1, fuel_level=1, latitude=1, longitude=1, odometer=1, raw_payload={},
+            )
+        self.assertEqual(self.client.delete(reverse('vehicle-detail', args=[self.vehicle.id])).status_code, 204)
+        self.assertEqual(TelemetryLog.objects.filter(vehicle=other).count(), 1)
+
+    def test_vehicle_without_history_can_be_deleted(self):
         response = self.client.delete(reverse('vehicle-detail', args=[self.vehicle.id]))
         self.assertEqual(response.status_code, 204)
 
