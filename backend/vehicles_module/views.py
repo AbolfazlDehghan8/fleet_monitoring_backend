@@ -95,10 +95,9 @@ class VehicleDetailView(APIView):
         return Response(VehicleSerializer(vehicle).data, status=status.HTTP_200_OK)
 
     @extend_schema(
-        responses={204: None, 400: 'Vehicle has history', 403: 'Forbidden', 404: 'Not Found'},
+        responses={204: None, 403: 'Forbidden', 404: 'Not Found'},
         summary='Delete a vehicle (admin only)',
-        description='Refused (400) when the vehicle has telemetry or alerts: set its status to '
-                    '`decommissioned` instead so history is preserved.',
+        description='Permanently deletes the vehicle together with its OBU, telemetry history and alerts.',
     )
     def delete(self, request, vehicle_id):
         VehicleService.delete_vehicle(request.user, vehicle_id)
