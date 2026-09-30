@@ -1,8 +1,8 @@
 import logging
 import random
 
+from django.apps import apps
 from django.core.cache import cache
-from django.core.exceptions import ValidationError
 from django.db import IntegrityError, models, transaction
 from django.utils import timezone as django_timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
@@ -253,15 +253,15 @@ class VehicleService:
         except Vehicle.DoesNotExist:
             raise NotFound('Vehicle not found')
 
-        if vehicle.telemetry_logs.exists() or vehicle.alerts.exists():
-            raise ValidationError({
-                'detail': 'Vehicle has recorded telemetry or alerts and cannot be deleted; '
-                          'set its status to decommissioned instead',
-            })
-
         manager_id, public_id = vehicle.assigned_manager_id, vehicle.vehicle_id
-        vehicle.delete()
 
+        telemetry_model = apps.get_model('telemetry_module', 'TelemetryLog')
+        with transaction.atomic():
+            vehicle.alerts.all().delete()
+            telemetry_model._base_manager.filter(vehicle_id=vehicle.pk)._raw_delete(using=vehicle._state.db)
+            vehicle.delete()
+
+        _safe_cache_delete(VEHICLE_TELEMETRY_CACHE_KEY.format(id=vehicle_id), 'invalidate_telemetry_cache')
         VehicleService._invalidate_caches(vehicle_id, [manager_id], public_id)
         audit_logger.info(
             'vehicle_deleted', extra={'actor': actor.id, 'action': 'delete_vehicle', 'target': vehicle_id}
