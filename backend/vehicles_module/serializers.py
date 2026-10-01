@@ -146,13 +146,13 @@ class _VehicleWriteBase(serializers.Serializer):
 class VehicleCreateSerializer(_VehicleWriteBase):
     vehicle_id = serializers.CharField(max_length=50, validators=[validate_vehicle_id])
     assigned_manager = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.filter(role='fleet_manager'), required=False, allow_null=True
+        queryset=User.objects.filter(role='fleet_manager', is_active=True), required=False, allow_null=True
     )
 
 
 class VehicleAdminUpdateSerializer(_VehicleWriteBase):
     assigned_manager = serializers.PrimaryKeyRelatedField(
-        queryset=User.objects.filter(role='fleet_manager'), required=False, allow_null=True
+        queryset=User.objects.filter(role='fleet_manager', is_active=True), required=False, allow_null=True
     )
 
 
