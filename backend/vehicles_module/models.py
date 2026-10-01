@@ -2,6 +2,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
+from django.utils import timezone
 
 from fleet_monitoring.validators import (
     iran_driver_license_validator,
@@ -121,6 +122,9 @@ class Vehicle(models.Model):
         related_name='managed_vehicles',
     )
 
+    manager_assigned_at = models.DateTimeField(null=True, blank=True, editable=False)
+    driver_assigned_at = models.DateTimeField(null=True, blank=True, editable=False)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -151,8 +155,27 @@ class Vehicle(models.Model):
             if previous.get('driver_id') != self.driver_id:
                 raise ValidationError({'driver': 'Assigned driver must be active'})
 
+    def _stamp_assignment_times(self):
+        previous = (
+            Vehicle.objects.filter(pk=self.pk).values('assigned_manager_id', 'driver_id').first()
+            if self.pk else None
+        ) or {}
+        now = timezone.now()
+        changed = []
+        if self.assigned_manager_id != previous.get('assigned_manager_id'):
+            self.manager_assigned_at = now if self.assigned_manager_id else None
+            changed.append('manager_assigned_at')
+        if self.driver_id != previous.get('driver_id'):
+            self.driver_assigned_at = now if self.driver_id else None
+            changed.append('driver_assigned_at')
+        return changed
+
     def save(self, *args, **kwargs):
         self._normalize()
+        changed = self._stamp_assignment_times()
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None and changed:
+            kwargs['update_fields'] = list(set(update_fields) | set(changed))
         super().save(*args, **kwargs)
 
 
