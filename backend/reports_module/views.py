@@ -68,7 +68,11 @@ class ReportListView(APIView):
 
     permission_classes = [IsAuthenticated, IsAdminOrFleetManager]
 
-    @extend_schema(responses={200: ReportSerializer(many=True)}, summary='List generated reports')
+    @extend_schema(
+        responses={200: ReportSerializer(many=True)},
+        summary='List my reports',
+        description='Own reports only; admins additionally see system-generated (scheduled) reports.',
+    )
     def get(self, request):
         reports = ReportService.list_reports(request.user)
         reports = ReportService.attach_sequence_numbers(request.user, reports)
@@ -92,9 +96,9 @@ class ReportDetailView(APIView):
         responses={204: None, 403: 'Forbidden', 404: 'Not Found'},
         summary='Delete a report',
         description=(
-            'Admins may delete any report; fleet managers may only delete reports they '
-            'requested themselves. Remaining reports are renumbered so sequence_number '
-            'stays gap-free.'
+            'Users may only delete reports they requested themselves; admins may also '
+            'delete system-generated (scheduled) reports. Remaining reports are '
+            'renumbered so sequence_number stays gap-free.'
         ),
     )
     def delete(self, request, report_id):
