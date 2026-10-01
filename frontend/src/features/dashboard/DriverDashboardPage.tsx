@@ -1,7 +1,9 @@
-import { AlertTriangle, CheckCircle2, ChevronRight, Gauge, MapPin, Truck } from 'lucide-react';
+import * as React from 'react';
+import { AlertTriangle, CheckCircle2, ChevronRight, Gauge, MapPin, Trash2, Truck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { useLanguage } from '@/app/LanguageContext';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { CardGridSkeleton, TableSkeleton } from '@/components/shared/LoadingSkeleton';
@@ -12,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from '@/components/ui/use-toast';
 import { PageHeader } from '@/components/shared/PageHeader';
-import { useAcknowledgeMyAlert, useMyAlerts } from '@/features/alerts/hooks';
+import { useAcknowledgeMyAlert, useDeleteAlert, useMyAlerts } from '@/features/alerts/hooks';
 import { useMyVehicles, useVehicleStatus } from '@/features/vehicles/hooks';
 import { ApiError } from '@/types/common';
 import { getApiErrorMessage } from '@/i18n/apiErrors';
@@ -161,6 +163,8 @@ function MyAlertRow({ alertId }: { alertId: number }) {
   const { t } = useLanguage();
   const alertsQuery = useMyAlerts();
   const acknowledgeMutation = useAcknowledgeMyAlert();
+  const deleteMutation = useDeleteAlert();
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = React.useState(false);
   const alert = alertsQuery.data?.find((a) => a.id === alertId);
   if (!alert) return null;
 
@@ -177,32 +181,68 @@ function MyAlertRow({ alertId }: { alertId: number }) {
     }
   }
 
+  async function handleDelete() {
+    try {
+      await deleteMutation.mutateAsync(alertId);
+      toast({ title: t('alerts.alertDeleted'), variant: 'success' });
+      setConfirmDeleteOpen(false);
+    } catch (error) {
+      toast({
+        title: t('alerts.failedToDelete'),
+        description: error instanceof ApiError ? getApiErrorMessage(error.body, t) : undefined,
+        variant: 'destructive',
+      });
+    }
+  }
+
   return (
-    <li className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
-      <div className="min-w-0 space-y-1">
-        <div className="flex items-center gap-2">
-          <AlertTriangle className="size-3.5 shrink-0 text-muted-foreground" />
-          <p className="truncate text-sm font-medium">{alert.rule_name}</p>
+    <>
+      <li className="flex items-start justify-between gap-3 rounded-lg border border-border p-3">
+        <div className="min-w-0 space-y-1">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="size-3.5 shrink-0 text-muted-foreground" />
+            <p className="truncate text-sm font-medium">{alert.rule_name}</p>
+          </div>
+          <p className="truncate text-xs text-muted-foreground">
+            {alert.vehicle_id} · {formatRelativeTime(alert.created_at)}
+          </p>
         </div>
-        <p className="truncate text-xs text-muted-foreground">
-          {alert.vehicle_id} · {formatRelativeTime(alert.created_at)}
-        </p>
-      </div>
-      <div className="flex shrink-0 items-center gap-2">
-        <SeverityBadge severity={alert.severity} />
-        {alert.acknowledged ? (
-          <span className="text-xs font-medium text-success">{t('alerts.acknowledged')}</span>
-        ) : (
+        <div className="flex shrink-0 items-center gap-2">
+          <SeverityBadge severity={alert.severity} />
+          {alert.acknowledged ? (
+            <span className="text-xs font-medium text-success">{t('alerts.acknowledged')}</span>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void handleAcknowledge()}
+              disabled={acknowledgeMutation.isPending}
+            >
+              {t('alerts.acknowledge')}
+            </Button>
+          )}
           <Button
-            size="sm"
-            variant="outline"
-            onClick={() => void handleAcknowledge()}
-            disabled={acknowledgeMutation.isPending}
+            size="icon"
+            variant="ghost"
+            className="size-8 text-muted-foreground hover:text-destructive"
+            aria-label={t('alerts.delete')}
+            title={t('alerts.delete')}
+            onClick={() => setConfirmDeleteOpen(true)}
           >
-            {t('alerts.acknowledge')}
+            <Trash2 className="size-4" />
           </Button>
-        )}
-      </div>
-    </li>
+        </div>
+      </li>
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title={t('alerts.deleteTitle')}
+        description={t('alerts.deleteDesc')}
+        confirmLabel={t('common.delete')}
+        destructive
+        loading={deleteMutation.isPending}
+        onConfirm={() => void handleDelete()}
+      />
+    </>
   );
 }
