@@ -14,7 +14,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from '@/components/ui/use-toast';
 import { ROLES } from '@/constants/roles';
 import { useAuth } from '@/features/auth/AuthContext';
-import type { TranslationKey } from '@/i18n/translations';
 import { ApiError } from '@/types/common';
 import { getApiErrorMessage } from '@/i18n/apiErrors';
 import type { Report } from '@/types/reports';
@@ -22,7 +21,7 @@ import { formatDateTime } from '@/utils/formatters';
 
 import { useDeleteReport, useGenerateReport, useReports } from './hooks';
 
-type RequesterFilter = 'all' | 'mine' | 'managers' | 'system';
+type RequesterFilter = 'all' | 'mine' | 'system';
 
 export function ReportsListPage() {
   const { t } = useLanguage();
@@ -35,17 +34,16 @@ export function ReportsListPage() {
   const [pendingDeleteId, setPendingDeleteId] = React.useState<number | null>(null);
   const [requesterFilter, setRequesterFilter] = React.useState<RequesterFilter>('all');
 
-  // Admin sees every report (their own + every fleet manager's + scheduled system
-  // reports) in one list — the filter and "Requested by" column keep those visually
-  // and functionally separate instead of one big mixed pile. Fleet managers only ever
-  // see their own reports anyway, so neither is shown to them.
+  // Reports are private per role: the backend only returns the caller's own reports,
+  // plus — for admins only — system-generated (scheduled) reports. Fleet managers
+  // therefore never see admin/system reports and admins never see managers' reports.
+  // The filter/column below only exist to tell an admin's own reports from system ones.
   const isAdmin = user?.role === ROLES.ADMIN;
 
   const filteredReports = React.useMemo(() => {
     const data = reportsQuery.data ?? [];
     if (!isAdmin || requesterFilter === 'all') return data;
     if (requesterFilter === 'mine') return data.filter((r) => r.requested_by === user?.id);
-    if (requesterFilter === 'managers') return data.filter((r) => r.requested_by_role === 'fleet_manager');
     return data.filter((r) => r.requested_by === null);
   }, [reportsQuery.data, requesterFilter, isAdmin, user?.id]);
 
@@ -95,17 +93,7 @@ export function ReportsListPage() {
               if (row.requested_by === null) {
                 return <Badge variant="muted">{t('reports.requesterSystem')}</Badge>;
               }
-              if (row.requested_by === user?.id) {
-                return <Badge>{t('reports.requesterMe')}</Badge>;
-              }
-              return (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm">{row.requested_by_username}</span>
-                  {row.requested_by_role && (
-                    <Badge variant="outline">{t(`role.${row.requested_by_role}` as TranslationKey)}</Badge>
-                  )}
-                </div>
-              );
+              return <Badge>{t('reports.requesterMe')}</Badge>;
             },
           } satisfies DataTableColumn<Report>,
         ]
@@ -188,7 +176,6 @@ export function ReportsListPage() {
             <SelectContent>
               <SelectItem value="all">{t('reports.filterAll')}</SelectItem>
               <SelectItem value="mine">{t('reports.filterMine')}</SelectItem>
-              <SelectItem value="managers">{t('reports.filterManagers')}</SelectItem>
               <SelectItem value="system">{t('reports.filterSystem')}</SelectItem>
             </SelectContent>
           </Select>

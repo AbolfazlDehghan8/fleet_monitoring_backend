@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { ListChecks, Plus, Trash2 } from 'lucide-react';
+import { ListChecks, Pencil, Plus, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { useLanguage } from '@/app/LanguageContext';
@@ -125,17 +125,30 @@ export function RulesListPage() {
       id: 'actions',
       header: '',
       cell: (row) => (
-        <Button
-          size="icon"
-          variant="ghost"
-          className="text-muted-foreground hover:text-destructive"
-          onClick={(e) => {
-            e.stopPropagation();
-            setPendingDeleteId(row.id);
-          }}
-        >
-          <Trash2 className="size-4" />
-        </Button>
+        <div className="flex justify-end gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="text-muted-foreground hover:text-foreground"
+            onClick={(e) => {
+              e.stopPropagation();
+              navigate(`/rules/${row.id}/edit`);
+            }}
+          >
+            <Pencil className="size-4" />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPendingDeleteId(row.id);
+            }}
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        </div>
       ),
       className: 'text-end',
     },

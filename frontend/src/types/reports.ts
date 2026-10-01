@@ -8,8 +8,8 @@ export interface Report {
    * remaining reports whenever an earlier one is deleted. */
   sequence_number: number;
   requested_by: number | null;
-  /** Null for system-generated (scheduled) reports. Lets an admin — who sees every
-   * report, not just their own — tell their own reports apart from fleet managers'. */
+  /** Null for system-generated (scheduled) reports, which only admins can see. Every
+   * other report is private to the user who requested it. */
   requested_by_username: string | null;
   requested_by_role: 'admin' | 'fleet_manager' | 'driver' | null;
   vehicle_id: string;

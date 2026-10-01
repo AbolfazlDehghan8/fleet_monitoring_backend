@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/use-toast';
 import { RULE_METRIC_RANGES, RULE_METRICS, RULE_OPERATORS, SEVERITIES } from '@/constants/statuses';
 import type { TranslationKey } from '@/i18n/translations';
+import type { Rule } from '@/types/rules';
 import { ApiError } from '@/types/common';
 import { getApiErrorMessage } from '@/i18n/apiErrors';
 
@@ -62,9 +63,29 @@ export function RuleFormPage() {
   const params = useParams<{ id: string }>();
   const isEditing = Boolean(params.id);
   const ruleId = params.id ? Number(params.id) : undefined;
-  const navigate = useNavigate();
 
   const ruleQuery = useRule(ruleId);
+
+  if (isEditing && (ruleQuery.isLoading || (!ruleQuery.data && !ruleQuery.isError))) {
+    return <p className="text-sm text-muted-foreground">{t('ruleForm.loadingRule')}</p>;
+  }
+
+  if (isEditing && ruleQuery.isError) {
+    return <ErrorState onRetry={() => void ruleQuery.refetch()} title={t('ruleForm.unableToLoad')} />;
+  }
+
+  // The form is mounted only once the rule has loaded and receives it as its initial
+  // state, so every field (including the Select/Switch controls) starts out filled with
+  // the values saved at creation. `key` guarantees a fresh form per rule, and a later
+  // background refetch can no longer overwrite what the admin is typing.
+  return <RuleForm key={ruleId ?? 'new'} rule={isEditing ? ruleQuery.data : undefined} ruleId={ruleId} />;
+}
+
+function RuleForm({ rule, ruleId }: { rule?: Rule; ruleId?: number }) {
+  const { t } = useLanguage();
+  const isEditing = rule !== undefined;
+  const navigate = useNavigate();
+
   const createMutation = useCreateRule();
   const updateMutation = useUpdateRule(ruleId ?? -1);
   const ruleSchema = useRuleSchema(t);
@@ -77,35 +98,26 @@ export function RuleFormPage() {
     formState: { errors, isSubmitting },
   } = useForm<RuleFormValues>({
     resolver: zodResolver(ruleSchema),
-    values: ruleQuery.data
+    defaultValues: rule
       ? {
-          name: ruleQuery.data.name,
-          description: ruleQuery.data.description,
-          metric: ruleQuery.data.metric,
-          operator: ruleQuery.data.operator,
-          threshold: ruleQuery.data.threshold,
-          severity: ruleQuery.data.severity,
-          is_active: ruleQuery.data.is_active,
+          name: rule.name,
+          description: rule.description ?? '',
+          metric: rule.metric,
+          operator: rule.operator,
+          threshold: rule.threshold,
+          severity: rule.severity,
+          is_active: rule.is_active,
         }
-      : undefined,
-    defaultValues: {
-      name: '',
-      description: '',
-      metric: 'speed',
-      operator: 'gt',
-      threshold: 0,
-      severity: 'medium',
-      is_active: true,
-    },
+      : {
+          name: '',
+          description: '',
+          metric: 'speed',
+          operator: 'gt',
+          threshold: 0,
+          severity: 'medium',
+          is_active: true,
+        },
   });
-
-  if (isEditing && ruleQuery.isLoading) {
-    return <p className="text-sm text-muted-foreground">{t('ruleForm.loadingRule')}</p>;
-  }
-
-  if (isEditing && ruleQuery.isError) {
-    return <ErrorState onRetry={() => void ruleQuery.refetch()} title={t('ruleForm.unableToLoad')} />;
-  }
 
   async function onSubmit(values: RuleFormValues) {
     try {

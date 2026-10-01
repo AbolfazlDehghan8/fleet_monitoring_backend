@@ -102,15 +102,9 @@ export function ReportDetailPage() {
           }
           actions={
             <div className="flex items-center gap-2">
-              {user?.role === ROLES.ADMIN &&
-                (report.requested_by === null ? (
-                  <Badge variant="muted">{t('reports.requesterSystem')}</Badge>
-                ) : report.requested_by !== user?.id ? (
-                  <Badge variant="outline">
-                    {report.requested_by_username}
-                    {report.requested_by_role ? ` · ${t(`role.${report.requested_by_role}` as TranslationKey)}` : ''}
-                  </Badge>
-                ) : null)}
+              {user?.role === ROLES.ADMIN && report.requested_by === null && (
+                <Badge variant="muted">{t('reports.requesterSystem')}</Badge>
+              )}
               <ReportStatusBadge status={report.status} />
               {report.status === 'completed' && (
                 <Button
