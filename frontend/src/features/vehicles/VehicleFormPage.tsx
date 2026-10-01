@@ -161,7 +161,8 @@ function VehicleForm({ vehicle, vehicleId }: { vehicle?: Vehicle; vehicleId?: nu
       .list({ role: ROLES.FLEET_MANAGER })
       .then((users) => {
         if (!cancelled) {
-          setManagers(users.map((u) => ({ id: u.id, label: u.username })));
+          // Deactivated fleet managers must not be selectable.
+          setManagers(users.filter((u) => u.is_active).map((u) => ({ id: u.id, label: u.username })));
         }
       })
       .catch(() => {

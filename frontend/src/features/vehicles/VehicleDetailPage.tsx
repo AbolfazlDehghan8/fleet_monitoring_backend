@@ -166,8 +166,8 @@ export function VehicleDetailPage() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <ProfileRow label={t('vehicleDetail.vin')} value={vehicle.vin ?? na} mono />
-            <ProfileRow label={t('vehicleDetail.driver')} value={vehicle.driver?.full_name ?? t('vehicleDetail.unassigned')} />
-            <ProfileRow label={t('vehicleDetail.driverPhone')} value={vehicle.driver?.phone_number ?? na} />
+            <ProfileRow label={t('vehicleDetail.driver')} value={vehicle.driver?.is_active ? vehicle.driver.full_name : t('vehicleDetail.unassigned')} />
+            <ProfileRow label={t('vehicleDetail.driverPhone')} value={vehicle.driver?.is_active ? (vehicle.driver.phone_number || na) : na} />
             <ProfileRow label={t('vehicleDetail.manager')} value={vehicle.assigned_manager_username ?? na} />
             <ProfileRow label={t('vehicleDetail.obuSerial')} value={vehicle.obu?.serial_number ?? na} mono />
             <ProfileRow label={t('vehicleDetail.firmware')} value={vehicle.obu?.firmware_version ?? na} />

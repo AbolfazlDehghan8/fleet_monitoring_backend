@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { KeyRound, Loader2, Save, UserCircle } from 'lucide-react';
 import { useForm } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
 import { z } from 'zod';
 
 import { useLanguage } from '@/app/LanguageContext';
@@ -53,6 +54,7 @@ type PasswordValues = { old_password: string; new_password: string; new_password
 export function ProfilePage() {
   const { t } = useLanguage();
   const { updateUser } = useAuth();
+  const navigate = useNavigate();
   const profileQuery = useProfile();
   const updateProfileMutation = useUpdateProfile();
   const changePasswordMutation = useChangePassword();
@@ -94,6 +96,7 @@ export function ProfilePage() {
         email: updated.email,
       });
       toast({ title: t('profile.updated'), variant: 'success' });
+      navigate('/');
     } catch (error) {
       toast({
         title: t('profile.couldNotUpdate'),
@@ -108,6 +111,7 @@ export function ProfilePage() {
       await changePasswordMutation.mutateAsync(values);
       toast({ title: t('profile.passwordChanged'), variant: 'success' });
       passwordForm.reset({ old_password: '', new_password: '', new_password_confirm: '' });
+      navigate('/');
     } catch (error) {
       toast({
         title: t('profile.couldNotChangePassword'),

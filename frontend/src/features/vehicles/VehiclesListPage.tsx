@@ -37,7 +37,7 @@ export function VehiclesListPage() {
     const data = vehiclesQuery.data ?? [];
     return data.filter((vehicle) => {
       const matchesStatus = !statusFilter || vehicle.status === statusFilter;
-      const haystack = `${vehicle.vehicle_id} ${vehicle.license_plate} ${vehicle.make} ${vehicle.model} ${vehicle.driver?.full_name ?? ''}`.toLowerCase();
+      const haystack = `${vehicle.vehicle_id} ${vehicle.license_plate} ${vehicle.make} ${vehicle.model} ${vehicle.driver?.is_active ? vehicle.driver.full_name : ''}`.toLowerCase();
       const matchesSearch = !search || haystack.includes(search.toLowerCase());
       return matchesStatus && matchesSearch;
     });
@@ -81,8 +81,8 @@ export function VehiclesListPage() {
     {
       id: 'driver',
       header: t('vehicles.colDriver'),
-      sortAccessor: (row) => row.driver?.full_name ?? null,
-      cell: (row) => <span className="text-sm">{row.driver?.full_name ?? t('common.notAvailable')}</span>,
+      sortAccessor: (row) => (row.driver?.is_active ? row.driver.full_name : null),
+      cell: (row) => <span className="text-sm">{row.driver?.is_active ? row.driver.full_name : t('common.notAvailable')}</span>,
     },
     {
       id: 'status',
