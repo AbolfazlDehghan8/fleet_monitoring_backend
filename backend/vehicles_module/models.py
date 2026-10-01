@@ -147,9 +147,11 @@ class Vehicle(models.Model):
             if self.pk else None
         ) or {}
 
-        if self.assigned_manager_id and not self.assigned_manager.is_fleet_manager:
-            if previous.get('assigned_manager_id') != self.assigned_manager_id:
+        if self.assigned_manager_id and previous.get('assigned_manager_id') != self.assigned_manager_id:
+            if not self.assigned_manager.is_fleet_manager:
                 raise ValidationError({'assigned_manager': 'Assigned manager must have the fleet_manager role'})
+            if not self.assigned_manager.is_active:
+                raise ValidationError({'assigned_manager': 'Assigned manager must be active'})
 
         if self.driver_id and not self.driver.is_active:
             if previous.get('driver_id') != self.driver_id:
