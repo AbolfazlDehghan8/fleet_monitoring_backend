@@ -1,6 +1,28 @@
 from django.db import models
+from django.db.models import F
 
 from rules_module.models import RULE_SEVERITY_CHOICES
+
+
+class AlertQuerySet(models.QuerySet):
+
+    def visible_to(self, user):
+        if user.is_admin:
+            return self
+        if user.is_fleet_manager:
+            return self.filter(
+                vehicle__assigned_manager=user,
+                created_at__gte=F('vehicle__manager_assigned_at'),
+            )
+        if user.is_driver:
+            driver_profile = getattr(user, 'driver_profile', None)
+            if driver_profile is None or not driver_profile.is_active:
+                return self.none()
+            return self.filter(
+                vehicle__driver=driver_profile,
+                created_at__gte=F('vehicle__driver_assigned_at'),
+            )
+        return self.none()
 
 
 class Alert(models.Model):
@@ -19,6 +41,8 @@ class Alert(models.Model):
     severity = models.CharField(max_length=10, choices=RULE_SEVERITY_CHOICES)
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    objects = AlertQuerySet.as_manager()
 
     class Meta:
         db_table = 'alerts'
