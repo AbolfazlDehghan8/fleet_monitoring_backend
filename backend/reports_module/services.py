@@ -3,7 +3,7 @@ import io
 import logging
 from datetime import timedelta
 
-from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, Min, OuterRef, Subquery
+from django.db.models import Avg, Count, DurationField, ExpressionWrapper, F, Max, Min, OuterRef, Q, Subquery
 from django.utils import timezone
 from rest_framework.exceptions import NotFound, PermissionDenied
 
@@ -185,16 +185,22 @@ class ReportService:
         except Report.DoesNotExist:
             raise NotFound('Report not found')
 
-        if not user.is_admin and report.requested_by_id != user.id:
-            raise PermissionDenied('This report was not requested by you')
+        if not ReportService._can_access(user, report):
+            raise PermissionDenied('You do not have access to this report')
 
         return report
+
+    @staticmethod
+    def _can_access(user, report):
+        if report.requested_by_id == user.id:
+            return True
+        return report.requested_by_id is None and user.is_admin
 
     @staticmethod
     def _report_scope(user):
         base = Report.objects.select_related('requested_by')
         if user.is_admin:
-            return base
+            return base.filter(Q(requested_by=user) | Q(requested_by__isnull=True))
         return base.filter(requested_by=user)
 
     @staticmethod
