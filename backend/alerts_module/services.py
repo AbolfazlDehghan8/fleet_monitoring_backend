@@ -59,20 +59,29 @@ class AlertService:
         return alert
 
     @staticmethod
+    def _raised_after(alert, assigned_at):
+        return assigned_at is not None and alert.created_at >= assigned_at
+
+    @staticmethod
     def _check_scope(actor, alert):
         if actor.is_admin:
             return
+        vehicle = alert.vehicle
         if actor.is_fleet_manager:
-            if alert.vehicle.assigned_manager_id != actor.id:
+            if vehicle.assigned_manager_id != actor.id:
                 raise PermissionDenied('This alert is not on a vehicle assigned to you')
+            if not AlertService._raised_after(alert, vehicle.manager_assigned_at):
+                raise PermissionDenied('This alert was raised before you were assigned to this vehicle')
             return
         if actor.is_driver:
             driver_profile = getattr(actor, 'driver_profile', None)
             if (
                 driver_profile is None or not driver_profile.is_active
-                or alert.vehicle.driver_id != driver_profile.id
+                or vehicle.driver_id != driver_profile.id
             ):
                 raise PermissionDenied('This alert is not on your vehicle')
+            if not AlertService._raised_after(alert, vehicle.driver_assigned_at):
+                raise PermissionDenied('This alert was raised before you were assigned to this vehicle')
             return
         raise PermissionDenied('Unknown role')
 
@@ -83,25 +92,16 @@ class AlertService:
 
     @staticmethod
     def list_alerts(user):
-        if user.is_admin:
-            queryset = Alert.objects.all()
-        elif user.is_fleet_manager:
-            queryset = Alert.objects.filter(vehicle__assigned_manager=user)
-        else:
-            queryset = Alert.objects.none()
-        queryset = queryset.exclude(dismissals__user=user).select_related('vehicle')
+        if not (user.is_admin or user.is_fleet_manager):
+            return Alert.objects.none()
+        queryset = Alert.objects.visible_to(user).exclude(dismissals__user=user).select_related('vehicle')
         return AlertService._with_ack_state(queryset, user)[:500]
 
     @staticmethod
     def list_alerts_for_driver(user):
-        driver_profile = getattr(user, 'driver_profile', None)
-        if driver_profile is None or not driver_profile.is_active:
+        if not user.is_driver:
             return Alert.objects.none()
-        queryset = (
-            Alert.objects.filter(vehicle__driver=driver_profile)
-            .exclude(dismissals__user=user)
-            .select_related('vehicle')
-        )
+        queryset = Alert.objects.visible_to(user).exclude(dismissals__user=user).select_related('vehicle')
         return AlertService._with_ack_state(queryset, user)[:500]
 
     @staticmethod
