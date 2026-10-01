@@ -468,3 +468,151 @@ class AlertRoleIndependenceTests(AlertsTestBase):
         self.assertIsNotNone(self._state('admin'))
         self.assertIsNotNone(self._state('manager'))
         self.assertFalse(self._state('admin')['acknowledged'])
+
+
+class AlertAssignmentWindowTests(AlertsTestBase):
+    def _new_alert(self):
+        cache.clear()
+        return self._create_alert()
+
+    def _ids(self, username, url_name='alert-list'):
+        self._auth_as(username)
+        return [a['id'] for a in self.client.get(reverse(url_name)).data]
+
+    def _detail_status(self, username, alert):
+        self._auth_as(username)
+        return self.client.get(reverse('alert-detail', args=[alert.id])).status_code
+
+    def _reassign_manager(self, manager):
+        self.vehicle.refresh_from_db()
+        self.vehicle.assigned_manager = manager
+        self.vehicle.save()
+
+    def _reassign_driver(self, driver):
+        self.vehicle.refresh_from_db()
+        self.vehicle.driver = driver
+        self.vehicle.save()
+
+    def _second_driver(self):
+        user = User.objects.create_user(
+            username='driveruser2', email='d2@example.com', password='StrongPass123', role='driver'
+        )
+        return Driver.objects.create(user=user, license_number='LIC-002')
+
+    def test_new_manager_does_not_see_old_alerts_but_sees_new_ones(self):
+        old_alert = self.alert
+        self._reassign_manager(self.other_manager)
+        self.assertEqual(self._ids('manager2'), [])
+        self.assertEqual(self._detail_status('manager2', old_alert), status.HTTP_403_FORBIDDEN)
+
+        new_alert = self._new_alert()
+        self.assertEqual(self._ids('manager2'), [new_alert.id])
+        self.assertEqual(self._detail_status('manager2', new_alert), status.HTTP_200_OK)
+
+    def test_previous_manager_loses_the_vehicle_alerts(self):
+        self._reassign_manager(self.other_manager)
+        new_alert = self._new_alert()
+        self.assertEqual(self._ids('manager'), [])
+        self.assertEqual(self._detail_status('manager', self.alert), status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._detail_status('manager', new_alert), status.HTTP_403_FORBIDDEN)
+
+    def test_returning_manager_does_not_get_alerts_from_his_absence(self):
+        self._reassign_manager(self.other_manager)
+        absent_alert = self._new_alert()
+        self._reassign_manager(self.manager)
+        self.assertEqual(self._ids('manager'), [])
+        self.assertEqual(self._detail_status('manager', absent_alert), status.HTTP_403_FORBIDDEN)
+        fresh_alert = self._new_alert()
+        self.assertEqual(self._ids('manager'), [fresh_alert.id])
+
+    def test_new_driver_does_not_see_old_alerts_but_sees_new_ones(self):
+        second_driver = self._second_driver()
+        self._reassign_driver(second_driver)
+        self.assertEqual(self._ids('driveruser2', 'alert-me'), [])
+        self.assertEqual(self._detail_status('driveruser2', self.alert), status.HTTP_403_FORBIDDEN)
+
+        new_alert = self._new_alert()
+        self.assertEqual(self._ids('driveruser2', 'alert-me'), [new_alert.id])
+        self.assertEqual(self._detail_status('driveruser2', new_alert), status.HTTP_200_OK)
+
+    def test_previous_driver_loses_the_vehicle_alerts(self):
+        self._reassign_driver(self._second_driver())
+        new_alert = self._new_alert()
+        self.assertEqual(self._ids('driveruser', 'alert-me'), [])
+        self.assertEqual(self._detail_status('driveruser', self.alert), status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._detail_status('driveruser', new_alert), status.HTTP_403_FORBIDDEN)
+
+    def test_driver_change_does_not_affect_manager_window(self):
+        self._reassign_driver(self._second_driver())
+        self.assertEqual(self._ids('manager'), [self.alert.id])
+
+    def test_manager_change_does_not_affect_driver_window(self):
+        self._reassign_manager(self.other_manager)
+        self.assertEqual(self._ids('driveruser', 'alert-me'), [self.alert.id])
+
+    def test_admin_always_sees_every_alert(self):
+        self._reassign_manager(self.other_manager)
+        self._reassign_driver(self._second_driver())
+        new_alert = self._new_alert()
+        self.assertCountEqual(self._ids('admin'), [self.alert.id, new_alert.id])
+
+    def test_unassigned_vehicle_clears_the_timestamps(self):
+        self.vehicle.refresh_from_db()
+        self.assertIsNotNone(self.vehicle.manager_assigned_at)
+        self.assertIsNotNone(self.vehicle.driver_assigned_at)
+        self.vehicle.assigned_manager = None
+        self.vehicle.driver = None
+        self.vehicle.save()
+        self.vehicle.refresh_from_db()
+        self.assertIsNone(self.vehicle.manager_assigned_at)
+        self.assertIsNone(self.vehicle.driver_assigned_at)
+
+    def test_saving_without_assignment_change_keeps_the_timestamps(self):
+        self.vehicle.refresh_from_db()
+        manager_at, driver_at = self.vehicle.manager_assigned_at, self.vehicle.driver_assigned_at
+        self.vehicle.status = Vehicle.Status.MAINTENANCE
+        self.vehicle.save()
+        self.vehicle.refresh_from_db()
+        self.assertEqual(self.vehicle.manager_assigned_at, manager_at)
+        self.assertEqual(self.vehicle.driver_assigned_at, driver_at)
+
+    def test_update_fields_save_still_persists_the_new_timestamp(self):
+        self.vehicle.refresh_from_db()
+        old_at = self.vehicle.manager_assigned_at
+        self.vehicle.assigned_manager = self.other_manager
+        self.vehicle.save(update_fields=['assigned_manager'])
+        self.vehicle.refresh_from_db()
+        self.assertGreater(self.vehicle.manager_assigned_at, old_at)
+
+    def test_dashboard_open_alert_count_only_counts_visible_alerts(self):
+        from vehicles_module.services import VehicleService
+
+        self._reassign_manager(self.other_manager)
+        self.assertEqual(VehicleService._count_open_alerts(self.other_manager), 0)
+        self._new_alert()
+        self.assertEqual(VehicleService._count_open_alerts(self.other_manager), 1)
+        self.assertEqual(VehicleService._count_open_alerts(self.manager), 0)
+        self.assertEqual(VehicleService._count_open_alerts(self.admin), 2)
+
+    def test_report_for_new_manager_excludes_pre_assignment_alerts(self):
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        from reports_module.services import ReportService
+
+        self._reassign_manager(self.other_manager)
+        new_alert = self._new_alert()
+        summary = ReportService.generate_fleet_summary(
+            self.other_manager,
+            start_date=timezone.now() - timedelta(days=1),
+            end_date=timezone.now() + timedelta(days=1),
+        )
+        self.assertEqual(summary['alerts']['total'], 1)
+        admin_summary = ReportService.generate_fleet_summary(
+            self.admin,
+            start_date=timezone.now() - timedelta(days=1),
+            end_date=timezone.now() + timedelta(days=1),
+        )
+        self.assertEqual(admin_summary['alerts']['total'], 2)
+        self.assertIsNotNone(new_alert)
