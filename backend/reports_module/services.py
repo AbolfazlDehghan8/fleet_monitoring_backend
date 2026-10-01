@@ -51,6 +51,8 @@ class ReportService:
         alerts_qs = Alert.objects.filter(
             vehicle__in=vehicles, created_at__gte=start_date, created_at__lte=end_date,
         )
+        if user is not None:
+            alerts_qs = alerts_qs.visible_to(user)
         first_ack = AlertAcknowledgment.objects.filter(alert=OuterRef('pk'))
         if user is not None:
             first_ack = first_ack.filter(user=user)
