@@ -246,13 +246,32 @@ class ReportDeletionTests(ReportsTestBase):
         delete = self.client.delete(reverse('report-detail', args=[report_id]))
         self.assertEqual(delete.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_admin_can_delete_any_report(self):
+    def test_admin_cannot_delete_a_fleet_managers_report(self):
         self._auth_as('manager')
         create = self.client.post(reverse('report-generate'), {})
         report_id = create.data['id']
 
         self._auth_as('admin')
         delete = self.client.delete(reverse('report-detail', args=[report_id]))
+        self.assertEqual(delete.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Report.objects.filter(id=report_id).exists())
+
+    def test_manager_cannot_delete_admins_report(self):
+        self._auth_as('admin')
+        create = self.client.post(reverse('report-generate'), {})
+        report_id = create.data['id']
+
+        self._auth_as('manager')
+        delete = self.client.delete(reverse('report-detail', args=[report_id]))
+        self.assertEqual(delete.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Report.objects.filter(id=report_id).exists())
+
+    def test_admin_can_delete_system_report(self):
+        generate_scheduled_fleet_report()
+        report = Report.objects.latest('created_at')
+
+        self._auth_as('admin')
+        delete = self.client.delete(reverse('report-detail', args=[report.id]))
         self.assertEqual(delete.status_code, status.HTTP_204_NO_CONTENT)
 
     def test_deleting_missing_report_returns_404(self):
@@ -307,35 +326,89 @@ class ReportSequenceNumberTests(ReportsTestBase):
         self.assertEqual(response.data['sequence_number'], 1)
 
 
-class ReportRequesterVisibilityTests(ReportsTestBase):
-    def test_admin_list_shows_who_requested_each_report(self):
+class ReportIsolationTests(ReportsTestBase):
+    def test_admin_list_excludes_fleet_managers_reports(self):
         self._auth_as('manager')
-        self.client.post(reverse('report-generate'), {})
+        manager_report = self.client.post(reverse('report-generate'), {})
 
         self._auth_as('admin')
         own = self.client.post(reverse('report-generate'), {})
 
         listing = self.client.get(reverse('report-list'))
-        by_id = {row['id']: row for row in listing.data}
+        ids = [row['id'] for row in listing.data]
+        self.assertIn(own.data['id'], ids)
+        self.assertNotIn(manager_report.data['id'], ids)
 
-        self.assertEqual(by_id[own.data['id']]['requested_by_username'], 'admin')
-        self.assertEqual(by_id[own.data['id']]['requested_by_role'], 'admin')
-
-        manager_report = next(row for row in listing.data if row['requested_by_role'] == 'fleet_manager')
-        self.assertEqual(manager_report['requested_by_username'], 'manager')
-
-        detail = self.client.get(reverse('report-detail', args=[manager_report['id']]))
-        self.assertEqual(detail.data['requested_by_username'], 'manager')
-        self.assertEqual(detail.data['requested_by_role'], 'fleet_manager')
-
-    def test_system_wide_scheduled_report_has_no_requester(self):
+    def test_manager_list_excludes_admin_and_system_reports(self):
+        self._auth_as('admin')
+        admin_report = self.client.post(reverse('report-generate'), {})
         generate_scheduled_fleet_report()
+        system_report = Report.objects.filter(requested_by__isnull=True).latest('created_at')
+
+        self._auth_as('manager')
+        own = self.client.post(reverse('report-generate'), {})
+
+        listing = self.client.get(reverse('report-list'))
+        ids = [row['id'] for row in listing.data]
+        self.assertEqual(ids, [own.data['id']])
+        self.assertNotIn(admin_report.data['id'], ids)
+        self.assertNotIn(system_report.id, ids)
+
+    def test_each_manager_sees_only_own_reports(self):
+        self._auth_as('manager')
+        first = self.client.post(reverse('report-generate'), {})
+        self._auth_as('manager2')
+        second = self.client.post(reverse('report-generate'), {})
+
+        listing = self.client.get(reverse('report-list'))
+        self.assertEqual([row['id'] for row in listing.data], [second.data['id']])
+        self.assertNotEqual(first.data['id'], second.data['id'])
+
+    def test_admin_cannot_open_or_export_a_fleet_managers_report(self):
+        self._auth_as('manager')
+        report_id = self.client.post(reverse('report-generate'), {}).data['id']
+
+        self._auth_as('admin')
+        detail = self.client.get(reverse('report-detail', args=[report_id]))
+        export = self.client.get(reverse('report-export', args=[report_id]))
+        self.assertEqual(detail.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(export.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_manager_cannot_open_or_export_admins_report(self):
+        self._auth_as('admin')
+        report_id = self.client.post(reverse('report-generate'), {}).data['id']
+
+        self._auth_as('manager')
+        detail = self.client.get(reverse('report-detail', args=[report_id]))
+        export = self.client.get(reverse('report-export', args=[report_id]))
+        self.assertEqual(detail.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(export.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_system_report_visible_to_admin_only(self):
+        generate_scheduled_fleet_report()
+        report = Report.objects.latest('created_at')
 
         self._auth_as('admin')
         listing = self.client.get(reverse('report-list'))
         system_report = next(row for row in listing.data if row['requested_by'] is None)
+        self.assertEqual(system_report['id'], report.id)
         self.assertIsNone(system_report['requested_by_username'])
         self.assertIsNone(system_report['requested_by_role'])
+        detail = self.client.get(reverse('report-detail', args=[report.id]))
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+
+        self._auth_as('manager')
+        detail = self.client.get(reverse('report-detail', args=[report.id]))
+        self.assertEqual(detail.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_sequence_numbers_not_affected_by_other_roles_reports(self):
+        self._auth_as('manager')
+        self.client.post(reverse('report-generate'), {})
+        self.client.post(reverse('report-generate'), {})
+
+        self._auth_as('admin')
+        response = self.client.post(reverse('report-generate'), {})
+        self.assertEqual(response.data['sequence_number'], 1)
 
 
 class ReportWindowLimitTests(ReportsTestBase):
