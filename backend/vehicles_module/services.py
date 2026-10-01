@@ -300,9 +300,7 @@ class VehicleService:
 
     @staticmethod
     def _count_open_alerts(user):
-        alerts_qs = Alert.objects.exclude(acknowledgments__user=user).exclude(dismissals__user=user)
-        if not user.is_admin:
-            alerts_qs = alerts_qs.filter(vehicle__assigned_manager=user)
+        alerts_qs = Alert.objects.visible_to(user).exclude(acknowledgments__user=user).exclude(dismissals__user=user)
         return alerts_qs.count()
 
     @staticmethod
