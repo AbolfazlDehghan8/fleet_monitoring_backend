@@ -21,7 +21,7 @@ class FleetSummaryReportView(APIView):
         summary='Generate a fleet summary report',
         description=(
             'Aggregates vehicle status, telemetry, and alert data over a date range '
-            f'(computed synchronously; window capped, see ReportQuerySerializer). '
+            '(computed synchronously; window capped, see ReportQuerySerializer). '
             'For long-running or repeated reports, prefer POST /reports/generate/.'
         ),
     )
